@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Generated artifacts (keep folders, ignore heavy outputs)
+data/raw/*.csv
+data/processed/*.npy
+data/processed/*.png
+models/*.pkl
+
+# Allow these to be tracked
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!models/.gitkeep
+!data/last_updated.txt
