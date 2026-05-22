@@ -119,7 +119,27 @@ Bounding box Bandung Raya: `-7.2500, 107.3500, -6.7500, 107.9000`
 CELL_3 = code('''# ============================================================
 # CELL 3 — Crawling Overpass API
 # ============================================================
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+# Daftar mirror Overpass (urutan = prioritas). Kalau yang utama 406/429/5xx,
+# fallback otomatis ke mirror berikutnya.
+OVERPASS_ENDPOINTS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
+    "https://overpass.openstreetmap.fr/api/interpreter",
+]
+
+# Overpass utama menolak default UA `python-requests/x.x` (HTTP 406).
+# Header eksplisit ini wajib supaya request diterima semua mirror.
+OVERPASS_HEADERS = {
+    "User-Agent": (
+        "Bandung-AI-Travel-Capstone/1.0 "
+        "(Telkom University; "
+        "+https://github.com/Fall-Llihc/Bandung_AI_Travel-Capstone-Project)"
+    ),
+    "Accept": "application/json",
+    "Accept-Encoding": "gzip, deflate",
+}
+
 BANDUNG_BBOX = "-7.2500,107.3500,-6.7500,107.9000"  # south,west,north,east
 
 OSM_CATEGORY_MAP = {
@@ -177,18 +197,41 @@ CATEGORY_QUERIES = {
 }
 
 
-def query_overpass(query_str: str) -> dict:
-    """Kirim Overpass QL query, return parsed JSON (dict kosong jika error)."""
-    try:
-        full_query = f"[out:json][timeout:30];({query_str});out center 60;"
-        resp = requests.post(OVERPASS_URL, data={"data": full_query}, timeout=30)
-        resp.raise_for_status()
-        time.sleep(2)  # rate limiting
-        return resp.json()
-    except Exception as e:
-        print(f"  ⚠️  Overpass error: {e}")
-        time.sleep(2)
-        return {}
+def query_overpass(query_str: str, max_retries: int = 2) -> dict:
+    """Kirim Overpass QL query, return parsed JSON (dict kosong jika gagal total).
+
+    Strategi:
+      1. Loop semua mirror di OVERPASS_ENDPOINTS.
+      2. Per mirror, retry sampai `max_retries` kali untuk 429/5xx.
+      3. Selalu kirim User-Agent + Accept (wajib agar tidak ditolak 406).
+      4. Sleep singkat antar request supaya sopan ke server publik.
+    """
+    full_query = f"[out:json][timeout:30];({query_str});out center 60;"
+    last_err = None
+    for endpoint in OVERPASS_ENDPOINTS:
+        host = endpoint.split("//", 1)[1].split("/", 1)[0]
+        for attempt in range(max_retries):
+            try:
+                resp = requests.post(
+                    endpoint,
+                    data={"data": full_query},
+                    headers=OVERPASS_HEADERS,
+                    timeout=45,
+                )
+                # 429 = rate limited, 5xx = mirror sibuk → backoff & retry
+                if resp.status_code == 429 or 500 <= resp.status_code < 600:
+                    last_err = f"HTTP {resp.status_code} dari {host}"
+                    time.sleep(3 + attempt * 2)
+                    continue
+                resp.raise_for_status()
+                time.sleep(1)  # rate limiting
+                return resp.json()
+            except Exception as e:
+                last_err = f"{host}: {e}"
+                time.sleep(2)
+        print(f"  ↪️  Mirror gagal ({host}) — coba mirror berikutnya…")
+    print(f"  ⚠️  Overpass error (semua mirror): {last_err}")
+    return {}
 
 
 def build_overpass_query(category: str, bbox: str) -> str:
