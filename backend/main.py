@@ -7,6 +7,7 @@ Exposes:
 Run locally:
     uvicorn main:app --reload --port 8000
 
+
 Run in production (Render):
     uvicorn main:app --host 0.0.0.0 --port $PORT
 """
@@ -86,6 +87,25 @@ def root():
         "health": "/api/health",
     }
 
+@app.get("/api/debug-paths")        # ← TAMBAHKAN BLOK INI
+def debug_paths():
+    from pathlib import Path
+    backend_dir = Path(__file__).resolve().parent
+    repo_root   = backend_dir.parent
+    models_dir  = repo_root / "models"
+    return {
+        "__file__":      str(Path(__file__).resolve()),
+        "backend_dir":   str(backend_dir),
+        "repo_root":     str(repo_root),
+        "models_dir":    str(models_dir),
+        "models_exists": models_dir.exists(),
+        "models_files":  os.listdir(str(models_dir)) if models_dir.exists() else [],
+        "app_exists":    Path("/app").exists(),
+        "app_contents":  os.listdir("/app") if Path("/app").exists() else [],
+        "app_models":    os.listdir("/app/models") if Path("/app/models").exists() else "NOT FOUND",
+        "cwd":           os.getcwd(),
+        "cwd_contents":  os.listdir(os.getcwd()),
+    }
 
 @app.get("/api/health")
 def health():
