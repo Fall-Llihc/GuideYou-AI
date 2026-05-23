@@ -1,0 +1,352 @@
+import React from "react";
+import { fmtRp, fmtTime, mdInline } from "../utils/format";
+
+/**
+ * Renders the API response. The backend returns the same shape that the old
+ * client-side planner produced, plus a server-generated `story` block.
+ */
+export default function ResultsScreen({ params, result, onRestart, onEditParams }) {
+  const itin = result;
+  const story = result.story || { intro: "", highlights: [], tips: [], closing: "", vibe: "" };
+
+  const gmaps = (d) =>
+    d.gmaps_url ||
+    `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(d.name + ", Bandung")}`;
+
+  const cats = [...new Set(itin.steps.map((s) => s.dest.category))];
+
+  return (
+    <div className="results rise">
+      <div className="results-header">
+        <div>
+          <div className="kicker" style={{ marginBottom: 10 }}>
+            Itinerary Tersusun
+          </div>
+          <h2>
+            Petualangan <em>{(story.vibe || "").toLowerCase()}</em> di Bandung
+          </h2>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div className="date">
+            {new Date().toLocaleDateString("id-ID", {
+              weekday: "long",
+              day: "numeric",
+              month: "long",
+            })}
+          </div>
+          <div style={{ marginTop: 6, color: "var(--ink-mute)", fontSize: 13 }}>
+            {itin.steps.length} destinasi · dari {params.homeName}
+          </div>
+        </div>
+      </div>
+
+      {/* Summary cards */}
+      <div className="summary-grid">
+        <div className="sum-card">
+          <div className="lab">Destinasi</div>
+          <div className="val">
+            {itin.steps.length}
+            <small>tempat</small>
+          </div>
+          <div className="sub">{cats.join(" · ")}</div>
+        </div>
+        <div className="sum-card">
+          <div className="lab">Total Biaya</div>
+          <div className="val">
+            {fmtRp(itin.totalCost).replace("Rp ", "")}
+            <small>rupiah</small>
+          </div>
+          <div className="sub">
+            {params.budget != null
+              ? `Sisa budget: ${fmtRp(Math.max(0, params.budget - itin.totalCost))}`
+              : "Tanpa batas budget"}
+          </div>
+        </div>
+        <div className="sum-card">
+          <div className="lab">Total Jarak</div>
+          <div className="val">
+            {itin.totalKm.toFixed(1)}
+            <small>km</small>
+          </div>
+          <div className="sub">Termasuk perjalanan pulang ({itin.returnKm.toFixed(1)} km)</div>
+        </div>
+        <div className="sum-card">
+          <div className="lab">Total Waktu</div>
+          <div className="val">
+            {Math.floor(itin.totalTime / 60)}
+            <small>
+              jam {itin.totalTime % 60} mnt
+            </small>
+          </div>
+          <div className="sub">
+            {itin.overBudget ? (
+              <span style={{ color: "var(--coral)" }}>
+                ⚠ Lewat batas {Math.abs(itin.spareMin)} mnt
+              </span>
+            ) : (
+              <span style={{ color: "var(--jade)" }}>
+                ✓ Selesai sebelum {fmtTime(itin.arriveHome)}
+              </span>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Timeline */}
+      <div className="section-head">
+        <h3>Rute & Detail Itinerary</h3>
+        <span className="count">— klik nama tempat untuk buka di Google Maps</span>
+      </div>
+
+      <div className="timeline">
+        {/* Start row */}
+        <div className="tl-row">
+          <div className="tl-time">
+            <div className="arr">{fmtTime(params.startMin)}</div>
+            <div className="dep">Berangkat</div>
+          </div>
+          <div className="tl-axis">
+            <div className="tl-dot start" />
+          </div>
+          <div className="tl-body">
+            <div className="top">
+              <div className="name" style={{ color: "var(--ink)" }}>
+                {params.homeName}
+                <span
+                  style={{
+                    fontSize: 12,
+                    color: "var(--ink-dim)",
+                    fontFamily: "var(--font-mono)",
+                    marginLeft: 8,
+                  }}
+                >
+                  HOME
+                </span>
+              </div>
+              <span className="meta-pill">Titik Awal</span>
+            </div>
+            <div className="desc">
+              Awali perjalananmu dari sini. Pastikan sudah sarapan dan kendaraan terisi penuh.
+            </div>
+          </div>
+        </div>
+
+        {itin.steps.map((s) => {
+          const catClass = s.dest.category.toLowerCase();
+          return (
+            <div key={s.dest.id} className="tl-row">
+              <div className="tl-time">
+                <div className="arr">{fmtTime(s.arriveAt)}</div>
+                <div className="dep">→ {fmtTime(s.departAt)}</div>
+                <div className="travel">
+                  +{s.travelMin} mnt · {s.travelKm.toFixed(1)} km
+                </div>
+              </div>
+              <div className="tl-axis">
+                <div className="tl-dot" />
+              </div>
+              <div className="tl-body">
+                <div className="top">
+                  <a href={gmaps(s.dest)} target="_blank" rel="noopener noreferrer" className="name">
+                    {s.dest.name}
+                    <span className="ext">↗</span>
+                  </a>
+                  <span className={`meta-pill ${catClass}`}>
+                    <span
+                      style={{
+                        display: "inline-block",
+                        width: 6,
+                        height: 6,
+                        borderRadius: "50%",
+                        background: "currentColor",
+                      }}
+                    />
+                    {s.dest.category}
+                  </span>
+                </div>
+                <div className="desc">{s.dest.desc}</div>
+                <div className="stats">
+                  <div className="stat">
+                    <div className="k">Tiba</div>
+                    <div className="v">{fmtTime(s.arriveAt)}</div>
+                  </div>
+                  <div className="stat">
+                    <div className="k">Selesai</div>
+                    <div className="v">{fmtTime(s.departAt)}</div>
+                  </div>
+                  <div className="stat">
+                    <div className="k">Tiket</div>
+                    <div className="v">{s.dest.ticket === 0 ? "Gratis" : fmtRp(s.dest.ticket)}</div>
+                  </div>
+                  <div className="stat">
+                    <div className="k">Durasi</div>
+                    <div className="v">{s.dest.duration} mnt</div>
+                  </div>
+                  <div className="stat">
+                    <div className="k">Jarak</div>
+                    <div className="v">{s.travelKm.toFixed(2)} km</div>
+                  </div>
+                  <div className="stat">
+                    <div className="k">Rating</div>
+                    <div className="v">★ {Number(s.dest.rating).toFixed(1)}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+
+        {/* End row */}
+        <div className="tl-row">
+          <div className="tl-time">
+            <div className="arr">{fmtTime(itin.arriveHome)}</div>
+            <div className="dep">Kembali</div>
+            <div className="travel">
+              +{itin.returnMin} mnt · {itin.returnKm.toFixed(1)} km
+            </div>
+          </div>
+          <div className="tl-axis">
+            <div className="tl-dot end" />
+          </div>
+          <div className="tl-body">
+            <div className="top">
+              <div className="name" style={{ color: "var(--ink)" }}>
+                Kembali ke {params.homeName}
+              </div>
+              <span className="meta-pill">Titik Akhir</span>
+            </div>
+            <div className="desc">
+              Perjalanan selesai. Saatnya istirahat dan unggah foto-foto terbaikmu.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Narrative box */}
+      <div className="narrative">
+        <div className="nh">
+          <div className="title">Cerita Perjalananmu</div>
+          <div className="badge">✦ Generated by LLM</div>
+        </div>
+        <div className="body">
+          <p dangerouslySetInnerHTML={{ __html: mdInline(story.intro) }} />
+
+          {story.highlights && story.highlights.length > 0 && (
+            <>
+              <p>
+                <strong>Highlight yang Wajib Dirasain</strong>
+              </p>
+              {story.highlights.map((h, i) => (
+                <p
+                  key={i}
+                  style={{
+                    paddingLeft: 16,
+                    borderLeft: "2px solid var(--line)",
+                    color: "var(--ink-mute)",
+                  }}
+                  dangerouslySetInnerHTML={{ __html: "→ " + mdInline(h) }}
+                />
+              ))}
+            </>
+          )}
+
+          {story.tips && story.tips.length > 0 && (
+            <>
+              <p>
+                <strong>Pro Tips dari BandungBuddy</strong>
+              </p>
+              {story.tips.map((t, i) => (
+                <p
+                  key={i}
+                  style={{
+                    paddingLeft: 16,
+                    borderLeft: "2px solid var(--line)",
+                    color: "var(--ink-mute)",
+                  }}
+                >
+                  ◆ {t}
+                </p>
+              ))}
+            </>
+          )}
+
+          {story.closing && <p dangerouslySetInnerHTML={{ __html: mdInline(story.closing) }} />}
+        </div>
+      </div>
+
+      {/* Resume / breakdown */}
+      <div className="resume">
+        <div className="section-head">
+          <h3>Resume Itinerary</h3>
+          <span className="count">— ringkasan akhir</span>
+        </div>
+
+        <div className="resume-grid">
+          <div className="resume-card">
+            <h4>Rincian Biaya & Waktu</h4>
+            {itin.steps.map((s, i) => (
+              <div className="rline" key={s.dest.id}>
+                <span className="k">
+                  {String(i + 1).padStart(2, "0")}. {s.dest.name}
+                </span>
+                <span className="v">
+                  {s.dest.ticket === 0 ? "Gratis" : fmtRp(s.dest.ticket)} · {s.dest.duration}m
+                </span>
+              </div>
+            ))}
+            <div className="rline">
+              <span className="k">
+                Estimasi BBM / transport ({itin.totalKm.toFixed(0)} km)
+              </span>
+              <span className="v">{fmtRp(Math.round(itin.totalKm * 1200))}</span>
+            </div>
+            <div className="rline total">
+              <span>Total Estimasi</span>
+              <span className="v">
+                {fmtRp(itin.totalCost + Math.round(itin.totalKm * 1200))}
+              </span>
+            </div>
+          </div>
+
+          <div className="resume-card">
+            <h4>Checklist Sebelum Berangkat</h4>
+            <ul className="tips">
+              <li>
+                <span className="num">1</span> Cek cuaca pagi hari, terutama jika ada destinasi alam
+                (Kawah Putih, Tebing Keraton).
+              </li>
+              <li>
+                <span className="num">2</span> Bawa jaket — suhu Bandung Selatan bisa 16°C di pagi
+                hari.
+              </li>
+              <li>
+                <span className="num">3</span> Siapkan e-wallet & cash kecil untuk parkir dan tiket
+                masuk.
+              </li>
+              <li>
+                <span className="num">4</span> Save GMaps offline untuk area Lembang / Ciwidey
+                (sinyal kadang lemah).
+              </li>
+              <li>
+                <span className="num">5</span> Total estimasi waktu {Math.floor(itin.totalTime / 60)}{" "}
+                jam — beri buffer 30 menit untuk hal tak terduga.
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div className="results-actions">
+        <button className="btn ghost" onClick={onEditParams}>
+          ← Ubah parameter
+        </button>
+        <button className="btn" onClick={onRestart}>
+          ↻ Mulai ulang
+        </button>
+        <button className="btn primary" onClick={() => alert("Itinerary tersimpan!")}>
+          ★ Simpan itinerary
+        </button>
+      </div>
+    </div>
+  );
+}

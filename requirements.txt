@@ -1,7 +1,14 @@
+# ─── Notebook / training requirements ────────────────────────────────────
+# These are dependencies for re-running the training notebooks under
+# notebooks/ (rec-engine.ipynb, llm-train.ipynb).
+#
+# For the backend service (deployed to Render), use backend/requirements.txt
+# instead — it pins versions exactly so the trained model pickles load cleanly.
+
 requests>=2.31.0
 pandas>=2.0.0
 numpy>=1.24.0
-scikit-learn>=1.3.0
+scikit-learn==1.6.1
 matplotlib>=3.7.0
 seaborn>=0.12.0
 tqdm>=4.65.0
