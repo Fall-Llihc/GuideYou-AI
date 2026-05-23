@@ -17,7 +17,7 @@ Input User (lokasi, budget, kategori, jam)
         ├── RL Q-Learning Agent      ← rl_agent.pkl
         └── Nearest-Neighbor TSP
         ↓
-  Groq LLM → Narasi perjalanan
+  Gemini LLM → Narasi perjalanan
         ↓
   Itinerary JSON → Frontend React (Vercel)
 ```
@@ -29,7 +29,7 @@ Input User (lokasi, budget, kategori, jam)
 | Frontend | React 18, CSS Variables |
 | Backend | FastAPI, Uvicorn, Python 3.11 |
 | Model | scikit-learn 1.6.1 (CBF + RL Q-Learning) |
-| LLM | Groq API — `llama-3.1-8b-instant` (free) |
+| LLM | Google Gemini API — `gemini-1.5-flash` (free tier) |
 | Hosting Frontend | Vercel (free) |
 | Hosting Backend | Railway (free trial $5 credit/month) |
 | Data | 316 destinasi wisata Bandung |
@@ -48,7 +48,7 @@ bandung-travel-ai/
 ├── backend/
 │   ├── main.py                 # FastAPI entry point
 │   ├── recommender.py          # CBF + RL inference engine
-│   ├── llm_storyteller.py      # Groq API integration
+│   ├── llm_storyteller.py      # Gemini API integration
 │   ├── requirements.txt
 │   ├── railway.json            # Railway IaC (build/start/healthcheck)
 │   ├── runtime.txt             # Pin Python 3.11.9 untuk Nixpacks
@@ -81,7 +81,7 @@ bandung-travel-ai/
 ### Prasyarat
 - Python 3.11+
 - Node.js 18+
-- Akun [Groq](https://console.groq.com) untuk API key (gratis)
+- Akun [Google AI Studio](https://aistudio.google.com/app/apikey) untuk Gemini API key (gratis)
 
 ### 1. Clone Repository
 
@@ -105,7 +105,7 @@ pip install -r requirements.txt
 
 Buat file `backend/.env`:
 ```env
-GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+GEMINI_API_KEY=your_gemini_api_key_here
 ALLOWED_ORIGINS=http://localhost:3000
 ```
 
@@ -148,7 +148,7 @@ Buka [http://localhost:3000](http://localhost:3000)
 - Akun [GitHub](https://github.com) — repo sudah di-push
 - Akun [Railway](https://railway.app) — daftar via GitHub
 - Akun [Vercel](https://vercel.com) — daftar via GitHub
-- `GROQ_API_KEY` dari [console.groq.com](https://console.groq.com)
+- `GEMINI_API_KEY` dari [aistudio.google.com](https://aistudio.google.com/app/apikey)
 
 ---
 
@@ -197,10 +197,10 @@ Tab **"Variables"** → tambah satu per satu:
 
 | Key | Value |
 |---|---|
-| `GROQ_API_KEY` | `gsk_xxxxxxxxxxxx` |
+| `GEMINI_API_KEY` | `xxxxxxxxxxxx` *(dari [aistudio.google.com](https://aistudio.google.com/app/apikey))* |
 | `ALLOWED_ORIGINS` | `*` *(update setelah dapat URL Vercel)* |
 | `PYTHON_VERSION` | `3.11.9` |
-| `GROQ_MODEL` | `llama-3.1-8b-instant` |
+| `GEMINI_MODEL` | `gemini-1.5-flash` |
 | `PORT` | `8000` |
 
 #### 2.5 Generate Domain
@@ -343,11 +343,13 @@ Update env vars:
 
 | Variable | Contoh | Keterangan |
 |---|---|---|
-| `GROQ_API_KEY` | `gsk_abc123...` | Dari [console.groq.com](https://console.groq.com), wajib |
+| `GEMINI_API_KEY` | `AIzaSy...` | Dari [aistudio.google.com](https://aistudio.google.com/app/apikey), wajib |
 | `ALLOWED_ORIGINS` | `https://bandung-travel.vercel.app` | URL frontend, pisah koma jika lebih dari satu |
 | `PYTHON_VERSION` | `3.11.9` | Pin runtime Python di Railway |
-| `GROQ_MODEL` | `llama-3.1-8b-instant` | Override model Groq (opsional) |
+| `GEMINI_MODEL` | `gemini-1.5-flash` | Override model Gemini (opsional) |
 | `PORT` | `8000` | Diinject Railway otomatis; aman di-set manual |
+
+> **Migrasi dari Groq:** kalau env var lama `GROQ_API_KEY` masih ter-set di Railway, app akan tetap pakai itu sebagai fallback sampai kamu rename jadi `GEMINI_API_KEY`. Tidak ada downtime saat ganti — set `GEMINI_API_KEY` lebih dulu, lalu hapus `GROQ_API_KEY` & `GROQ_MODEL`.
 
 ### Frontend (`frontend/.env.*`)
 

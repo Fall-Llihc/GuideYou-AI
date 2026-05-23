@@ -119,7 +119,7 @@ def health():
             list(recommender.sim_matrix.shape) if recommender.sim_matrix is not None else None
         ),
         "q_table_size": len(recommender.q_table),
-        "groq_configured": bool(os.getenv("GROQ_API_KEY")),
+        "gemini_configured": bool(os.getenv("GEMINI_API_KEY") or os.getenv("GROQ_API_KEY")),
     }
 
 
@@ -142,9 +142,9 @@ def plan(req: PlanRequest):
         log.exception("Recommender failed")
         raise HTTPException(status_code=500, detail=f"Recommender error: {exc}") from exc
 
-    # LLM narrative is best-effort: never fail the whole response if Groq is
-    # down, missing API key, or rate-limited. The fallback narrator returns a
-    # locally-generated story so the frontend always has something to render.
+    # LLM narrative is best-effort: never fail the whole response if Gemini
+    # is down, missing API key, or rate-limited. The fallback narrator returns
+    # a generic story so the frontend always has something to render.
     story = generate_story(itinerary, home_name=req.homeName, categories=req.categories)
 
     return {
