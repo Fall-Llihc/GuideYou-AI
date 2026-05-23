@@ -94,6 +94,11 @@ def health():
         "last_updated": recommender.last_updated,
         "n_destinations": recommender.n_destinations,
         "model_loaded": recommender.model_loaded,
+        "cbf_loaded": recommender.cbf_loaded,
+        "sim_matrix_shape": (
+            list(recommender.sim_matrix.shape) if recommender.sim_matrix is not None else None
+        ),
+        "q_table_size": len(recommender.q_table),
         "groq_configured": bool(os.getenv("GROQ_API_KEY")),
     }
 
