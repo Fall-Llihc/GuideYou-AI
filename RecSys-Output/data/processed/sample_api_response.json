@@ -1,0 +1,111 @@
+{
+  "steps": [
+    {
+      "idx": 1,
+      "dest": {
+        "id": "osm-node-1346794434",
+        "name": "Mambo FoodCourt",
+        "category": "Kuliner",
+        "desc": "Destinasi wisata Kuliner di Bandung",
+        "ticket": 32500,
+        "duration": 95,
+        "lat": -6.8941921,
+        "lng": 107.6150603,
+        "rating": 4.37,
+        "tags": [],
+        "gmaps_url": "https://www.google.com/maps/search/?api=1&query=Mambo%20FoodCourt%2C%20Bandung",
+        "stay_detail": ""
+      },
+      "travelMin": 7,
+      "travelKm": 5.3,
+      "arriveAt": 547,
+      "departAt": 642
+    },
+    {
+      "idx": 2,
+      "dest": {
+        "id": "osm-node-1341941777",
+        "name": "Pizza Place",
+        "category": "Kuliner",
+        "desc": "Destinasi wisata Kuliner di Bandung",
+        "ticket": 32500,
+        "duration": 95,
+        "lat": -6.8925163,
+        "lng": 107.6127554,
+        "rating": 4.37,
+        "tags": [],
+        "gmaps_url": "https://www.google.com/maps/search/?api=1&query=Pizza%20Place%2C%20Bandung",
+        "stay_detail": ""
+      },
+      "travelMin": 1,
+      "travelKm": 0.64,
+      "arriveAt": 643,
+      "departAt": 738
+    },
+    {
+      "idx": 3,
+      "dest": {
+        "id": "osm-node-1342896154",
+        "name": "Dago Panineungan",
+        "category": "Kuliner",
+        "desc": "Destinasi wisata Kuliner di Bandung",
+        "ticket": 32500,
+        "duration": 95,
+        "lat": -6.8872957,
+        "lng": 107.6138988,
+        "rating": 4.37,
+        "tags": [],
+        "gmaps_url": "https://www.google.com/maps/search/?api=1&query=Dago%20Panineungan%2C%20Bandung",
+        "stay_detail": ""
+      },
+      "travelMin": 2,
+      "travelKm": 1.23,
+      "arriveAt": 740,
+      "departAt": 835
+    },
+    {
+      "idx": 4,
+      "dest": {
+        "id": "osm-node-1070157126",
+        "name": "Gunung Buluh",
+        "category": "Alam",
+        "desc": "Destinasi wisata Alam di Bandung",
+        "ticket": 17000,
+        "duration": 120,
+        "lat": -6.7992705,
+        "lng": 107.6697873,
+        "rating": 4.43076923076923,
+        "tags": [],
+        "gmaps_url": "https://www.google.com/maps/search/?api=1&query=Gunung%20Buluh%2C%20Bandung",
+        "stay_detail": ""
+      },
+      "travelMin": 26,
+      "travelKm": 14.71,
+      "arriveAt": 861,
+      "departAt": 981
+    }
+  ],
+  "totalCost": 114500,
+  "totalKm": 41.95,
+  "totalTime": 472,
+  "returnKm": 20.07,
+  "returnMin": 31,
+  "arriveHome": 1012,
+  "overBudget": false,
+  "spareMin": 248,
+  "story": {
+    "intro": "(akan di-generate oleh Notebook 02 / Groq API)",
+    "highlights": [
+      "(per destinasi)",
+      "(per destinasi)",
+      "(per destinasi)",
+      "(per destinasi)"
+    ],
+    "tips": [
+      "(2-4 tips praktis)"
+    ],
+    "closing": "(1 kalimat penutup)",
+    "vibe": "Alam & Kuliner"
+  },
+  "data_last_updated": "2026-05-23"
+}
