@@ -175,10 +175,6 @@ class Recommender:
         if not isinstance(cbf_model, dict):
             log.warning("cbf_model.pkl is not a dict — CBF scoring disabled.")
             return None, {}
-
-        # SEBELUM:
-        sim     = cbf_model.get("sim_matrix")
-        idx_map = cbf_model.get("id_to_sim_idx") or {}
         
         # SESUDAH — support kedua format key:
         sim = cbf_model.get("sim_matrix") or cbf_model.get("similarity_matrix")
