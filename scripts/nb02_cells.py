@@ -25,7 +25,26 @@ Notebook ini:
 CELL_1 = code('''# ============================================================
 # CELL 1 — Setup & Dependency Check
 # ============================================================
-# !pip install -q requests pandas numpy scikit-learn
+# Auto-install: cek import; kalau ada yang missing, install otomatis sekali.
+import importlib
+import importlib.util
+import subprocess
+import sys
+
+REQUIRED = {
+    "requests": "requests",
+    "pandas": "pandas",
+    "numpy": "numpy",
+    "sklearn": "scikit-learn",
+}
+missing = [pkg for mod, pkg in REQUIRED.items()
+           if importlib.util.find_spec(mod) is None]
+if missing:
+    print(f"📦 Installing missing packages: {missing}")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", *missing])
+    print("✅ Install selesai.")
+else:
+    print("✅ Semua dependency sudah terpasang.")
 
 import os
 import re
@@ -241,6 +260,8 @@ class RouteOptimizer:
     def __init__(self, use_osrm=True, osrm_timeout=5.0):
         self.use_osrm = use_osrm
         self.osrm_timeout = osrm_timeout
+        # Cache supaya panggilan ulang antar segment tidak menghantam OSRM public.
+        self._osrm_cache = {}
 
     def haversine_km(self, lat1, lng1, lat2, lng2):
         return haversine_km(lat1, lng1, lat2, lng2)
@@ -249,15 +270,21 @@ class RouteOptimizer:
         if not self.use_osrm:
             d = self.haversine_km(lat1, lng1, lat2, lng2)
             return d, (d / self.SPEED_KMH) * 60
+        key = (round(lat1, 4), round(lng1, 4), round(lat2, 4), round(lng2, 4))
+        if key in self._osrm_cache:
+            return self._osrm_cache[key]
         try:
             url = f"{self.OSRM_BASE}/{lng1},{lat1};{lng2},{lat2}?overview=false"
             resp = requests.get(url, timeout=self.osrm_timeout)
             resp.raise_for_status()
             r = resp.json()["routes"][0]
-            return r["distance"] / 1000.0, r["duration"] / 60.0
+            dist_km = r["distance"] / 1000.0
+            dur_min = r["duration"] / 60.0
         except Exception:
             d = self.haversine_km(lat1, lng1, lat2, lng2)
-            return d, (d / self.SPEED_KMH) * 60
+            dist_km, dur_min = d, (d / self.SPEED_KMH) * 60
+        self._osrm_cache[key] = (dist_km, dur_min)
+        return dist_km, dur_min
 
     def nearest_neighbor_route(self, home, destinations):
         if not destinations:
@@ -315,7 +342,8 @@ class RouteOptimizer:
         return_km, return_min = self.osrm_travel_time(cur_lat, cur_lng, home["lat"], home["lng"])
         arrive_home = cur_time + int(round(return_min))
         total_km += float(return_km)
-        total_time = total_visit + sum(s["travelMin"] for s in steps) + int(round(return_min))
+        # totalTime = waktu total dari berangkat sampai tiba kembali (kontrak frontend)
+        total_time = int(arrive_home - start_min)
         return {
             "steps": steps,
             "totalCost": int(total_cost),
@@ -624,12 +652,23 @@ CATEGORY_ORDER = ["Alam", "Kuliner", "Budaya", "Wisata", "Belanja"]
 def _state_for_inference(n_selected: int, spent: int, budget,
                          cur_time: int, start_min: int, end_min: int,
                          selected: list) -> tuple:
-    if budget is None or budget <= 0:
+    # Bucket budget sesuai spec README:
+    # 0 = habis, 1 = <25%, 2 = <50%, 3 = <75%, 4 = >=75% sisa
+    if budget is None or budget >= 999_999_998:
         budget_level = 4
+    elif budget <= 0:
+        budget_level = 0
     else:
         ratio = max(0.0, 1.0 - spent / budget)
-        budget_level = min(4, int(ratio * 4 + 1e-9))
-        if ratio >= 0.75:
+        if ratio <= 0.0:
+            budget_level = 0
+        elif ratio < 0.25:
+            budget_level = 1
+        elif ratio < 0.50:
+            budget_level = 2
+        elif ratio < 0.75:
+            budget_level = 3
+        else:
             budget_level = 4
     time_left = max(0, end_min - cur_time)
     if time_left <= 0:
@@ -669,7 +708,7 @@ def generate_full_itinerary(params: dict, cbf_model, rl_data: dict,
             home_lat=params["home"]["lat"], home_lng=params["home"]["lng"], top_n=30,
         )
 
-    # 2. RL-guided selection
+    # 2. RL-guided selection — feasibility-aware
     selected = []
     remaining = candidates.to_dict("records")
     spent = 0
@@ -683,12 +722,14 @@ def generate_full_itinerary(params: dict, cbf_model, rl_data: dict,
             len(selected), spent, params.get("budget"),
             cur_time, params["startMin"], params["endMin"], selected
         )
-        # Filter feasibility (budget + window)
+        # Feasibility filter: budget + time window
         feasible = []
         for d in remaining:
-            if params.get("budget") and (spent + int(d.get("ticket", 0))) > params["budget"]:
+            tk = int(d.get("ticket", 0))
+            dur = int(d.get("duration", 60))
+            if params.get("budget") is not None and (spent + tk) > params["budget"]:
                 continue
-            if cur_time + int(d.get("duration", 60)) > params["endMin"]:
+            if cur_time + dur > params["endMin"]:
                 continue
             feasible.append(d)
         if not feasible:
