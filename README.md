@@ -3,7 +3,7 @@
 > AI-powered itinerary planner untuk wisata Bandung — pilih kategori, budget, dan jam perjalanan, agen AI menyusun rute optimal lengkap dengan cerita perjalanan.
 
 **Live Demo:** [https://bandung-travel.vercel.app](https://bandung-travel.vercel.app)
-**API:** [https://bandung-travel-api.onrender.com](https://bandung-travel-api.onrender.com/api/health)
+**API:** [https://bandung-travel-api.up.railway.app](https://bandung-travel-api.up.railway.app/api/health)
 
 ---
 
@@ -12,7 +12,7 @@
 ```
 Input User (lokasi, budget, kategori, jam)
         ↓
-  FastAPI Backend (Render)
+  FastAPI Backend (Railway)
         ├── Content-Based Filtering  ← cbf_model.pkl
         ├── RL Q-Learning Agent      ← rl_agent.pkl
         └── Nearest-Neighbor TSP
@@ -31,7 +31,7 @@ Input User (lokasi, budget, kategori, jam)
 | Model | scikit-learn 1.6.1 (CBF + RL Q-Learning) |
 | LLM | Groq API — `llama-3.1-8b-instant` (free) |
 | Hosting Frontend | Vercel (free) |
-| Hosting Backend | Render (free, Singapore) |
+| Hosting Backend | Railway (free trial $5 credit/month) |
 | Data | 316 destinasi wisata Bandung |
 
 ---
@@ -50,6 +50,9 @@ bandung-travel-ai/
 │   ├── recommender.py          # CBF + RL inference engine
 │   ├── llm_storyteller.py      # Groq API integration
 │   ├── requirements.txt
+│   ├── railway.json            # Railway IaC (build/start/healthcheck)
+│   ├── runtime.txt             # Pin Python 3.11.9 untuk Nixpacks
+│   ├── Procfile                # Fallback start spec
 │   └── data/
 │       ├── destinations.csv    # 316 destinasi wisata Bandung
 │       └── last_updated.txt
@@ -139,11 +142,11 @@ Buka [http://localhost:3000](http://localhost:3000)
 
 ---
 
-## 🚀 Deployment (Render + Vercel — Gratis)
+## 🚀 Deployment (Railway + Vercel — Gratis)
 
 ### Prasyarat Deployment
 - Akun [GitHub](https://github.com) — repo sudah di-push
-- Akun [Render](https://render.com) — daftar via GitHub
+- Akun [Railway](https://railway.app) — daftar via GitHub
 - Akun [Vercel](https://vercel.com) — daftar via GitHub
 - `GROQ_API_KEY` dari [console.groq.com](https://console.groq.com)
 
@@ -166,45 +169,69 @@ git push
 
 ---
 
-### Step 2 — Deploy Backend ke Render
+### Step 2 — Deploy Backend ke Railway
 
-1. Login ke [render.com](https://render.com) → **New +** → **Web Service**
-2. Pilih repository `bandung-travel-ai`
-3. Isi konfigurasi:
+#### 2.1 Daftar Railway
 
-   | Field | Nilai |
-   |---|---|
-   | **Name** | `bandung-travel-api` |
-   | **Region** | Singapore |
-   | **Branch** | `main` |
-   | **Root Directory** | `backend` |
-   | **Runtime** | Python 3 |
-   | **Build Command** | `pip install -r requirements.txt` |
-   | **Start Command** | `uvicorn main:app --host 0.0.0.0 --port $PORT` |
-   | **Instance Type** | Free |
+Buka [railway.app](https://railway.app) → klik **"Start a New Project"** → **"Login with GitHub"** → authorize.
 
-4. Klik **Advanced** → **Add Environment Variable**:
+#### 2.2 New Project
 
-   | Key | Value |
-   |---|---|
-   | `GROQ_API_KEY` | `gsk_xxxxxxxxxxxx` |
-   | `ALLOWED_ORIGINS` | `*` *(update setelah dapat URL Vercel)* |
+Dashboard Railway → klik **"New Project"** → pilih **"Deploy from GitHub repo"** → cari dan pilih `Bandung_AI_Travel-Capstone-Project`.
 
-5. Klik **Create Web Service** — build ~3–5 menit
+#### 2.3 Konfigurasi Service
 
-6. Setelah selesai, catat URL Render:
-   ```
-   https://bandung-travel-api.onrender.com
-   ```
-   Test: `https://bandung-travel-api.onrender.com/api/health` → harus return `{"status":"ok"}`
+Railway auto-detect Python (via Nixpacks). Klik service yang baru dibuat → tab **"Settings"**:
+
+| Field | Nilai |
+|---|---|
+| **Root Directory** | `backend` |
+| **Build Command** | `pip install -r requirements.txt` |
+| **Start Command** | `uvicorn main:app --host 0.0.0.0 --port $PORT` |
+
+> Jika `backend/railway.json` sudah ter-commit (sudah ada di repo ini), Railway akan membaca konfigurasinya otomatis — kamu tidak perlu mengisi build/start command manual.
+
+#### 2.4 Set Environment Variables
+
+Tab **"Variables"** → tambah satu per satu:
+
+| Key | Value |
+|---|---|
+| `GROQ_API_KEY` | `gsk_xxxxxxxxxxxx` |
+| `ALLOWED_ORIGINS` | `*` *(update setelah dapat URL Vercel)* |
+| `PYTHON_VERSION` | `3.11.9` |
+| `GROQ_MODEL` | `llama-3.1-8b-instant` |
+| `PORT` | `8000` |
+
+#### 2.5 Generate Domain
+
+Tab **"Settings"** → scroll ke **"Networking"** → klik **"Generate Domain"**.
+
+Railway beri URL seperti:
+```
+https://bandung-travel-api.up.railway.app
+```
+
+#### 2.6 Deploy
+
+Klik **"Deploy"** → pantau log → tunggu ~3–5 menit.
+
+Test:
+```
+https://bandung-travel-api.up.railway.app/api/health
+```
+Harus return:
+```json
+{"status":"ok","n_destinations":316,"cbf_loaded":true,"sim_matrix_shape":[316,316]}
+```
 
 ---
 
 ### Step 3 — Siapkan Environment Frontend
 
-Buat file `frontend/.env.production` (ganti URL dengan URL Render kamu):
+Buat file `frontend/.env.production` (ganti URL dengan URL Railway kamu):
 ```env
-REACT_APP_API_URL=https://bandung-travel-api.onrender.com
+REACT_APP_API_URL=https://bandung-travel-api.up.railway.app
 ```
 
 Commit dan push:
@@ -234,7 +261,7 @@ git push
 
    | Name | Value |
    |---|---|
-   | `REACT_APP_API_URL` | `https://bandung-travel-api.onrender.com` |
+   | `REACT_APP_API_URL` | `https://bandung-travel-api.up.railway.app` |
 
 5. Klik **Deploy** — build ~1–3 menit
 
@@ -245,16 +272,19 @@ git push
 
 ---
 
-### Step 5 — Update CORS di Render
+### Step 5 — Update CORS di Railway
 
-Setelah URL Vercel diketahui, perbarui `ALLOWED_ORIGINS` di Render agar lebih aman:
+Setelah URL Vercel diketahui, perbarui `ALLOWED_ORIGINS` di Railway agar lebih aman:
 
-1. Render dashboard → service → tab **Environment**
+1. Railway dashboard → service → tab **Variables**
 2. Edit nilai `ALLOWED_ORIGINS`:
    ```
    https://bandung-travel.vercel.app
    ```
-3. Klik **Save Changes** — Render otomatis redeploy
+3. Railway otomatis redeploy setelah variable berubah.
+
+> Jika frontend di-redeploy ke URL berbeda (preview deployment, custom domain), tambahkan ke list dengan koma sebagai pemisah, misal:
+> `https://bandung-travel.vercel.app,https://bandungtravel.my.id`
 
 ---
 
@@ -263,8 +293,8 @@ Setelah URL Vercel diketahui, perbarui `ALLOWED_ORIGINS` di Render agar lebih am
 Buka browser, buka DevTools (F12) → tab Console, lalu cek:
 
 ```
-✅ https://bandung-travel-api.onrender.com/api/health  → {"status":"ok"}
-✅ https://bandung-travel.vercel.app                   → halaman Welcome tampil
+✅ https://bandung-travel-api.up.railway.app/api/health  → {"status":"ok"}
+✅ https://bandung-travel.vercel.app                     → halaman Welcome tampil
 ✅ Isi form → klik Generate → muncul hasil itinerary
 ✅ Console tab kosong (tidak ada error merah CORS)
 ✅ Klik nama destinasi → Google Maps terbuka di tab baru
@@ -275,7 +305,7 @@ Buka browser, buka DevTools (F12) → tab Console, lalu cek:
 
 ### Auto-Deploy
 
-Setelah setup selesai, setiap push ke `main` → Render dan Vercel **otomatis redeploy** tanpa action manual:
+Setelah setup selesai, setiap push ke `main` → Railway dan Vercel **otomatis redeploy** tanpa action manual:
 
 ```bash
 git add .
@@ -291,7 +321,7 @@ Jika ingin URL lebih profesional seperti `bandungtravel.my.id`:
 
 **Di Vercel** → Settings → Domains → tambah `bandungtravel.my.id`
 
-**Di Render** → Settings → Custom Domains → tambah `api.bandungtravel.my.id`
+**Di Railway** → service → Settings → Networking → **Custom Domain** → tambah `api.bandungtravel.my.id` → Railway tampilkan target CNAME (mis. `xyz.up.railway.app`).
 
 Tambah record di panel domain .my.id:
 
@@ -299,28 +329,31 @@ Tambah record di panel domain .my.id:
 |---|---|---|
 | A | `@` | `76.76.21.21` |
 | CNAME | `www` | `cname.vercel-dns.com` |
-| CNAME | `api` | `bandung-travel-api.onrender.com` |
+| CNAME | `api` | `<target-cname-dari-railway>` |
 
 Update env vars:
 - Vercel: `REACT_APP_API_URL` → `https://api.bandungtravel.my.id`
-- Render: `ALLOWED_ORIGINS` → `https://bandungtravel.my.id,https://www.bandungtravel.my.id`
+- Railway: `ALLOWED_ORIGINS` → `https://bandungtravel.my.id,https://www.bandungtravel.my.id`
 
 ---
 
 ## 🔑 Environment Variables — Ringkasan
 
-### Backend (`backend/.env` untuk lokal, Render untuk production)
+### Backend (`backend/.env` untuk lokal, Railway untuk production)
 
 | Variable | Contoh | Keterangan |
 |---|---|---|
 | `GROQ_API_KEY` | `gsk_abc123...` | Dari [console.groq.com](https://console.groq.com), wajib |
 | `ALLOWED_ORIGINS` | `https://bandung-travel.vercel.app` | URL frontend, pisah koma jika lebih dari satu |
+| `PYTHON_VERSION` | `3.11.9` | Pin runtime Python di Railway |
+| `GROQ_MODEL` | `llama-3.1-8b-instant` | Override model Groq (opsional) |
+| `PORT` | `8000` | Diinject Railway otomatis; aman di-set manual |
 
 ### Frontend (`frontend/.env.*`)
 
 | Variable | Dev | Production |
 |---|---|---|
-| `REACT_APP_API_URL` | `http://localhost:8000` | `https://bandung-travel-api.onrender.com` |
+| `REACT_APP_API_URL` | `http://localhost:8000` | `https://bandung-travel-api.up.railway.app` |
 
 > **Jangan commit `.env`** — sudah ada di `.gitignore`
 
@@ -328,11 +361,13 @@ Update env vars:
 
 ## ⚠️ Hal yang Perlu Diperhatikan
 
-**Render free tier spin-up** — backend "tidur" setelah 15 menit tidak ada request. Request pertama setelah idle butuh ~30–50 detik untuk bangun kembali. Ini normal, bukan error.
+**Railway free trial vs Hobby plan** — Railway memberi $5 credit/bulan di trial. Service kecil seperti ini biasanya cukup, tapi pantau usage di dashboard. Untuk production jangka panjang, upgrade ke Hobby plan ($5/bulan flat) supaya tidak deprovision.
 
 **scikit-learn versi exact** — `requirements.txt` harus `scikit-learn==1.6.1` (bukan `>=`). Model pkl dilatih dengan versi ini; versi berbeda bisa menyebabkan error saat load.
 
-**CORS harus cocok exact** — nilai `ALLOWED_ORIGINS` di Render harus sama persis dengan URL Vercel, termasuk `https://` dan tanpa trailing slash.
+**CORS harus cocok exact** — nilai `ALLOWED_ORIGINS` di Railway harus sama persis dengan URL Vercel, termasuk `https://` dan tanpa trailing slash.
+
+**Health endpoint** — `/api/health` mengembalikan `cbf_loaded` dan `sim_matrix_shape` untuk memastikan model benar-benar ter-load. Jika `cbf_loaded: false`, cek log Railway — kemungkinan sklearn version mismatch.
 
 ---
 
@@ -342,22 +377,25 @@ Update env vars:
 ```
 Access to fetch ... has been blocked by CORS policy
 ```
-→ Cek `ALLOWED_ORIGINS` di Render, pastikan URL Vercel sudah benar dan tidak ada typo.
+→ Cek `ALLOWED_ORIGINS` di Railway, pastikan URL Vercel sudah benar dan tidak ada typo.
 
-**Build Render gagal: `ERROR: Could not find a version that satisfies scikit-learn`**
-→ Pastikan `requirements.txt` berisi `scikit-learn==1.6.1` (exact, bukan range).
+**Build Railway gagal: `ERROR: Could not find a version that satisfies scikit-learn`**
+→ Pastikan `requirements.txt` berisi `scikit-learn==1.6.1` (exact, bukan range), dan `runtime.txt` berisi `python-3.11.9`.
 
-**Model tidak ditemukan saat Render start**
+**Model tidak ditemukan saat Railway start**
 ```
 FileNotFoundError: models/cbf_model.pkl
 ```
-→ Cek `git ls-files models/` — jika kosong, berarti folder `models/` tidak ter-commit. Hapus `models/` dari `.gitignore` jika ada, lalu commit ulang.
+→ Cek `git ls-files models/` — jika kosong, berarti folder `models/` tidak ter-commit. Hapus `models/*.pkl` dari `.gitignore` jika ada, lalu commit ulang.
+
+**`cbf_loaded: false` di /api/health**
+→ Model pkl ke-load tapi schema tidak sesuai. Cek log Railway untuk melihat keys apa yang ada di pkl, lalu sinkronkan dengan training notebook.
 
 **Frontend build gagal: `Module not found`**
 → Pastikan semua import di komponen React menggunakan path yang benar. Hapus semua referensi `window.buildItinerary`, `window.DESTINATIONS`, dan `window.generateNarrative`.
 
 **Itinerary tidak muncul meski tidak ada error**
-→ Buka Network tab di DevTools, cek response dari `/api/plan`. Jika status 500, cek Logs di Render dashboard.
+→ Buka Network tab di DevTools, cek response dari `/api/plan`. Jika status 500, cek tab **"Deployments" → Logs** di Railway dashboard.
 
 ---
 
