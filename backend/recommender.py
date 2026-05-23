@@ -34,9 +34,9 @@ log = logging.getLogger(__name__)
 
 # Repository layout: backend/recommender.py — models live one level up at /models/
 import os
-BACKEND_DIR = Path(__file__).resolve().parent
+BACKEND_DIR = Path(__file__).resolve().parent   # /app/backend/
 _repo_candidates = [
-    BACKEND_DIR.parent,
+    BACKEND_DIR.parent,      # /app/  ← ini yang benar setelah fix
     Path("/app"),
     Path("/workspace"),
 ]
