@@ -26,8 +26,29 @@ Notebook ini membangun pipeline lengkap dari:
 CELL_1 = code("""# ============================================================
 # CELL 1 — Setup & Instalasi Dependencies
 # ============================================================
-# Jalankan baris ini sekali jika package belum terpasang.
-# !pip install -q requests pandas numpy scikit-learn matplotlib seaborn tqdm
+# Auto-install: cek import; kalau ada yang missing, install otomatis sekali.
+import importlib
+import importlib.util
+import subprocess
+import sys
+
+REQUIRED = {
+    "requests": "requests",
+    "pandas": "pandas",
+    "numpy": "numpy",
+    "sklearn": "scikit-learn",
+    "matplotlib": "matplotlib",
+    "seaborn": "seaborn",
+    "tqdm": "tqdm",
+}
+missing = [pkg for mod, pkg in REQUIRED.items()
+           if importlib.util.find_spec(mod) is None]
+if missing:
+    print(f"📦 Installing missing packages: {missing}")
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", *missing])
+    print("✅ Install selesai.")
+else:
+    print("✅ Semua dependency sudah terpasang.")
 
 import os
 import re
@@ -98,7 +119,27 @@ Bounding box Bandung Raya: `-7.2500, 107.3500, -6.7500, 107.9000`
 CELL_3 = code('''# ============================================================
 # CELL 3 — Crawling Overpass API
 # ============================================================
-OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+# Daftar mirror Overpass (urutan = prioritas). Kalau yang utama 406/429/5xx,
+# fallback otomatis ke mirror berikutnya.
+OVERPASS_ENDPOINTS = [
+    "https://overpass-api.de/api/interpreter",
+    "https://overpass.kumi.systems/api/interpreter",
+    "https://overpass.private.coffee/api/interpreter",
+    "https://overpass.openstreetmap.fr/api/interpreter",
+]
+
+# Overpass utama menolak default UA `python-requests/x.x` (HTTP 406).
+# Header eksplisit ini wajib supaya request diterima semua mirror.
+OVERPASS_HEADERS = {
+    "User-Agent": (
+        "Bandung-AI-Travel-Capstone/1.0 "
+        "(Telkom University; "
+        "+https://github.com/Fall-Llihc/Bandung_AI_Travel-Capstone-Project)"
+    ),
+    "Accept": "application/json",
+    "Accept-Encoding": "gzip, deflate",
+}
+
 BANDUNG_BBOX = "-7.2500,107.3500,-6.7500,107.9000"  # south,west,north,east
 
 OSM_CATEGORY_MAP = {
@@ -156,18 +197,41 @@ CATEGORY_QUERIES = {
 }
 
 
-def query_overpass(query_str: str) -> dict:
-    """Kirim Overpass QL query, return parsed JSON (dict kosong jika error)."""
-    try:
-        full_query = f"[out:json][timeout:30];({query_str});out center 60;"
-        resp = requests.post(OVERPASS_URL, data={"data": full_query}, timeout=30)
-        resp.raise_for_status()
-        time.sleep(2)  # rate limiting
-        return resp.json()
-    except Exception as e:
-        print(f"  ⚠️  Overpass error: {e}")
-        time.sleep(2)
-        return {}
+def query_overpass(query_str: str, max_retries: int = 2) -> dict:
+    """Kirim Overpass QL query, return parsed JSON (dict kosong jika gagal total).
+
+    Strategi:
+      1. Loop semua mirror di OVERPASS_ENDPOINTS.
+      2. Per mirror, retry sampai `max_retries` kali untuk 429/5xx.
+      3. Selalu kirim User-Agent + Accept (wajib agar tidak ditolak 406).
+      4. Sleep singkat antar request supaya sopan ke server publik.
+    """
+    full_query = f"[out:json][timeout:30];({query_str});out center 60;"
+    last_err = None
+    for endpoint in OVERPASS_ENDPOINTS:
+        host = endpoint.split("//", 1)[1].split("/", 1)[0]
+        for attempt in range(max_retries):
+            try:
+                resp = requests.post(
+                    endpoint,
+                    data={"data": full_query},
+                    headers=OVERPASS_HEADERS,
+                    timeout=45,
+                )
+                # 429 = rate limited, 5xx = mirror sibuk → backoff & retry
+                if resp.status_code == 429 or 500 <= resp.status_code < 600:
+                    last_err = f"HTTP {resp.status_code} dari {host}"
+                    time.sleep(3 + attempt * 2)
+                    continue
+                resp.raise_for_status()
+                time.sleep(1)  # rate limiting
+                return resp.json()
+            except Exception as e:
+                last_err = f"{host}: {e}"
+                time.sleep(2)
+        print(f"  ↪️  Mirror gagal ({host}) — coba mirror berikutnya…")
+    print(f"  ⚠️  Overpass error (semua mirror): {last_err}")
+    return {}
 
 
 def build_overpass_query(category: str, bbox: str) -> str:
@@ -235,78 +299,99 @@ CELL_4 = code('''# ============================================================
 # ============================================================
 SEED_DESTINATIONS = [
     # ===== ALAM (5) =====
+    # Durasi alam: parkir+jalan ke spot (15-30'), eksplorasi/foto (60-120'), istirahat (15-30')
     {"id": "kawah-putih", "name": "Kawah Putih", "category": "Alam",
      "desc": "Danau kawah vulkanik dengan air berwarna putih kehijauan di ketinggian 2430 mdpl",
-     "ticket": 81000, "duration": 120, "lat": -7.1660, "lng": 107.4019,
-     "rating": 4.6, "tags": ["sunrise", "fotogenik", "dingin"]},
+     "ticket": 81000, "duration": 150, "lat": -7.1660, "lng": 107.4019,
+     "rating": 4.6, "tags": ["sunrise", "fotogenik", "dingin"],
+     "stay_detail": "Parkir & jalan ke kawah 20', keliling kawah & foto 90', istirahat 20', kembali ke parkir 20'"},
     {"id": "kebun-teh-rancabali", "name": "Kebun Teh Rancabali", "category": "Alam",
      "desc": "Hamparan kebun teh hijau di Ciwidey dengan udara sejuk dan pemandangan luas",
-     "ticket": 25000, "duration": 90, "lat": -7.1432, "lng": 107.4106,
-     "rating": 4.5, "tags": ["hijau", "fotogenik", "sejuk"]},
+     "ticket": 25000, "duration": 105, "lat": -7.1432, "lng": 107.4106,
+     "rating": 4.5, "tags": ["hijau", "fotogenik", "sejuk"],
+     "stay_detail": "Jalan ke area kebun 15', jalan-jalan & foto di perkebunan 60', duduk santai 30'"},
     {"id": "stone-garden-padalarang", "name": "Stone Garden Padalarang", "category": "Alam",
      "desc": "Taman batu purba dengan formasi karst unik di kawasan Citatah, Padalarang",
-     "ticket": 15000, "duration": 90, "lat": -6.8323, "lng": 107.4709,
-     "rating": 4.4, "tags": ["batu", "fotogenik", "karst"]},
+     "ticket": 15000, "duration": 105, "lat": -6.8323, "lng": 107.4709,
+     "rating": 4.4, "tags": ["batu", "fotogenik", "karst"],
+     "stay_detail": "Naik ke area batu 20', eksplorasi formasi & foto 60', istirahat 25'"},
     {"id": "tebing-keraton", "name": "Tebing Keraton", "category": "Alam",
      "desc": "Tebing dengan view hutan pinus Dago Pakar, populer untuk sunrise",
-     "ticket": 15000, "duration": 90, "lat": -6.8359, "lng": 107.6630,
-     "rating": 4.5, "tags": ["sunrise", "hiking", "tebing"]},
+     "ticket": 15000, "duration": 120, "lat": -6.8359, "lng": 107.6630,
+     "rating": 4.5, "tags": ["sunrise", "hiking", "tebing"],
+     "stay_detail": "Hiking ke tebing 30', menikmati view & foto 45', duduk santai 25', turun kembali 20'"},
     {"id": "tangkuban-perahu", "name": "Tangkuban Perahu", "category": "Alam",
      "desc": "Gunung berapi aktif dengan kawah ratu yang ikonik di utara Bandung",
-     "ticket": 30000, "duration": 120, "lat": -6.7597, "lng": 107.6098,
-     "rating": 4.5, "tags": ["gunung", "kawah", "legendaris"]},
+     "ticket": 30000, "duration": 135, "lat": -6.7597, "lng": 107.6098,
+     "rating": 4.5, "tags": ["gunung", "kawah", "legendaris"],
+     "stay_detail": "Parkir & jalan ke kawah ratu 20', lihat kawah & foto 45', jalan ke kawah domas 30', kembali 25', beli oleh-oleh 15'"},
 
     # ===== KULINER (3) =====
+    # Durasi kuliner: antri (15-30'), pesan & tunggu (10-20'), makan (30-45'), santai (15-20')
     {"id": "floating-market-lembang", "name": "Floating Market Lembang", "category": "Kuliner",
      "desc": "Pasar terapung dengan beragam jajanan tradisional Sunda di atas perahu",
-     "ticket": 30000, "duration": 90, "lat": -6.8121, "lng": 107.6178,
-     "rating": 4.3, "tags": ["jajanan", "keluarga", "fotogenik"]},
+     "ticket": 30000, "duration": 105, "lat": -6.8121, "lng": 107.6178,
+     "rating": 4.3, "tags": ["jajanan", "keluarga", "fotogenik"],
+     "stay_detail": "Keliling pasar & pilih makanan 30', antri & beli jajanan 20', makan di perahu 35', foto-foto 20'"},
     {"id": "jalan-braga", "name": "Jalan Braga", "category": "Kuliner",
      "desc": "Kawasan bersejarah dengan kafe, resto, dan bangunan kolonial khas Bandung tempo dulu",
-     "ticket": 0, "duration": 90, "lat": -6.9160, "lng": 107.6094,
-     "rating": 4.4, "tags": ["heritage", "kafe", "malam"]},
+     "ticket": 0, "duration": 100, "lat": -6.9160, "lng": 107.6094,
+     "rating": 4.4, "tags": ["heritage", "kafe", "malam"],
+     "stay_detail": "Jalan-jalan sepanjang Braga 25', pilih & masuk kafe 10', pesan & tunggu 15', makan/ngopi 35', foto arsitektur 15'"},
     {"id": "punclut-bukit-bintang", "name": "Punclut Bukit Bintang", "category": "Kuliner",
      "desc": "Spot makan dengan view kota Bandung dari ketinggian, populer untuk dinner romantis",
-     "ticket": 0, "duration": 120, "lat": -6.8528, "lng": 107.6235,
-     "rating": 4.3, "tags": ["view", "romantis", "malam"]},
+     "ticket": 0, "duration": 110, "lat": -6.8528, "lng": 107.6235,
+     "rating": 4.3, "tags": ["view", "romantis", "malam"],
+     "stay_detail": "Cari tempat duduk & pesan 15', tunggu makanan 20', makan sambil nikmati view 45', foto & santai 30'"},
 
     # ===== BUDAYA (3) =====
+    # Durasi budaya: antri tiket (10-15'), tur/keliling (45-90'), baca informasi/interaksi (15-30')
     {"id": "saung-angklung-udjo", "name": "Saung Angklung Udjo", "category": "Budaya",
      "desc": "Pusat pertunjukan dan pelatihan angklung — warisan budaya Sunda dunia",
-     "ticket": 75000, "duration": 90, "lat": -6.8924, "lng": 107.6537,
-     "rating": 4.7, "tags": ["pertunjukan", "edukasi", "tradisi"]},
+     "ticket": 75000, "duration": 120, "lat": -6.8924, "lng": 107.6537,
+     "rating": 4.7, "tags": ["pertunjukan", "edukasi", "tradisi"],
+     "stay_detail": "Registrasi & duduk 15', pertunjukan angklung 60', workshop interaktif 30', beli merchandise 15'"},
     {"id": "gedung-sate", "name": "Gedung Sate", "category": "Budaya",
      "desc": "Gedung pemerintahan ikonik dengan arsitektur Indo-Eropa dan ornamen tusuk sate",
-     "ticket": 5000, "duration": 60, "lat": -6.9024, "lng": 107.6188,
-     "rating": 4.5, "tags": ["heritage", "ikon", "arsitektur"]},
+     "ticket": 5000, "duration": 75, "lat": -6.9024, "lng": 107.6188,
+     "rating": 4.5, "tags": ["heritage", "ikon", "arsitektur"],
+     "stay_detail": "Registrasi 10', tur dalam gedung & museum 40', foto eksterior & taman 25'"},
     {"id": "museum-geologi", "name": "Museum Geologi", "category": "Budaya",
      "desc": "Museum koleksi fosil, mineral, dan sejarah geologi nusantara",
      "ticket": 3000, "duration": 90, "lat": -6.9006, "lng": 107.6225,
-     "rating": 4.5, "tags": ["edukasi", "fosil", "sains"]},
+     "rating": 4.5, "tags": ["edukasi", "fosil", "sains"],
+     "stay_detail": "Beli tiket & antri 10', keliling lantai 1 (fosil) 30', keliling lantai 2 (mineral) 30', baca diorama & foto 20'"},
 
     # ===== WISATA (3) =====
+    # Durasi wisata: antri tiket/masuk (15-20'), main/eksplorasi (60-180'), istirahat/makan (30-45')
     {"id": "farmhouse-lembang", "name": "Farmhouse Lembang", "category": "Wisata",
      "desc": "Wisata bertema Eropa dengan rumah hobbit, peternakan mini, dan susu segar",
-     "ticket": 35000, "duration": 120, "lat": -6.8324, "lng": 107.6122,
-     "rating": 4.3, "tags": ["keluarga", "fotogenik", "eropa"]},
+     "ticket": 35000, "duration": 135, "lat": -6.8324, "lng": 107.6122,
+     "rating": 4.3, "tags": ["keluarga", "fotogenik", "eropa"],
+     "stay_detail": "Antri masuk 15', foto rumah hobbit & spot Eropa 40', petting zoo 25', minum susu & jajan 30', belanja souvenir 25'"},
     {"id": "dusun-bambu", "name": "Dusun Bambu", "category": "Wisata",
      "desc": "Resort & taman wisata keluarga bertema alam pegunungan dengan playground",
      "ticket": 25000, "duration": 150, "lat": -6.8005, "lng": 107.5701,
-     "rating": 4.4, "tags": ["keluarga", "alam", "kuliner"]},
+     "rating": 4.4, "tags": ["keluarga", "alam", "kuliner"],
+     "stay_detail": "Masuk & jalan ke area utama 15', playground anak 40', makan di lutung kasarung 45', keliling danau & foto 30', istirahat 20'"},
     {"id": "trans-studio-bandung", "name": "Trans Studio Bandung", "category": "Wisata",
      "desc": "Theme park indoor terbesar di Indonesia dengan wahana berstandar internasional",
-     "ticket": 280000, "duration": 240, "lat": -6.9273, "lng": 107.6364,
-     "rating": 4.5, "tags": ["theme-park", "keluarga", "indoor"]},
+     "ticket": 280000, "duration": 270, "lat": -6.9273, "lng": 107.6364,
+     "rating": 4.5, "tags": ["theme-park", "keluarga", "indoor"],
+     "stay_detail": "Beli tiket & antri masuk 20', wahana utama (3-4 rides + antri) 150', pertunjukan 40', makan & istirahat 40', foto-foto 20'"},
 
     # ===== BELANJA (2) =====
+    # Durasi belanja: parkir & masuk (10-15'), keliling toko (60-90'), coba/tawar (20-30'), bayar (10-15')
     {"id": "cihampelas-walk", "name": "Cihampelas Walk", "category": "Belanja",
      "desc": "Mall outdoor populer di Cihampelas, perpaduan factory outlet dan gaya hidup",
      "ticket": 0, "duration": 120, "lat": -6.8946, "lng": 107.6029,
-     "rating": 4.3, "tags": ["mall", "kuliner", "fashion"]},
+     "rating": 4.3, "tags": ["mall", "kuliner", "fashion"],
+     "stay_detail": "Parkir & masuk 10', keliling outlet fashion 50', coba baju & tawar 30', makan/ngopi di food court 30'"},
     {"id": "pasar-baru-trade-center", "name": "Pasar Baru Trade Center", "category": "Belanja",
      "desc": "Pusat grosir tekstil dan fashion legendaris di pusat kota Bandung",
      "ticket": 0, "duration": 120, "lat": -6.9166, "lng": 107.6075,
-     "rating": 4.2, "tags": ["grosir", "fashion", "tradisional"]},
+     "rating": 4.2, "tags": ["grosir", "fashion", "tradisional"],
+     "stay_detail": "Parkir & masuk 10', keliling lantai tekstil 40', tawar-menawar 30', pilih & bayar 20', bawa ke mobil 20'"},
 ]
 
 # ---------- Tambahan manual (≥34 destinasi) untuk total ≥50 ----------
@@ -314,156 +399,192 @@ EXTRA_DESTINATIONS = [
     # ALAM (8 tambahan)
     {"id": "situ-patenggang", "name": "Situ Patenggang", "category": "Alam",
      "desc": "Danau alami di Ciwidey dengan legenda Batu Cinta dan perahu wisata",
-     "ticket": 30000, "duration": 120, "lat": -7.1769, "lng": 107.3656,
-     "rating": 4.5, "tags": ["danau", "legenda", "perahu"]},
+     "ticket": 30000, "duration": 135, "lat": -7.1769, "lng": 107.3656,
+     "rating": 4.5, "tags": ["danau", "legenda", "perahu"],
+     "stay_detail": "Beli tiket & jalan ke dermaga 15', naik perahu ke Batu Cinta 30', foto & keliling 45', kembali & istirahat 30', oleh-oleh 15'"},
     {"id": "curug-dago", "name": "Curug Dago", "category": "Alam",
      "desc": "Air terjun di kawasan Taman Hutan Raya Djuanda dengan jejak prasasti raja Thailand",
-     "ticket": 17000, "duration": 90, "lat": -6.8540, "lng": 107.6299,
-     "rating": 4.2, "tags": ["air-terjun", "hiking", "sejarah"]},
+     "ticket": 17000, "duration": 105, "lat": -6.8540, "lng": 107.6299,
+     "rating": 4.2, "tags": ["air-terjun", "hiking", "sejarah"],
+     "stay_detail": "Hiking turun ke air terjun 25', nikmati & foto 30', lihat prasasti 15', naik kembali 25', istirahat 10'"},
     {"id": "curug-cimahi", "name": "Curug Cimahi", "category": "Alam",
      "desc": "Air terjun pelangi setinggi 87 meter di kawasan Cisarua",
      "ticket": 15000, "duration": 90, "lat": -6.8033, "lng": 107.5503,
-     "rating": 4.4, "tags": ["air-terjun", "pelangi", "fotogenik"]},
+     "rating": 4.4, "tags": ["air-terjun", "pelangi", "fotogenik"],
+     "stay_detail": "Turun tangga ke viewpoint 20', menikmati view & foto 30', istirahat 15', naik kembali 25'"},
     {"id": "tahura-djuanda", "name": "Taman Hutan Raya Ir. H. Djuanda", "category": "Alam",
      "desc": "Hutan kota dengan goa Jepang, goa Belanda, dan trek alam di Dago Pakar",
      "ticket": 17000, "duration": 150, "lat": -6.8579, "lng": 107.6299,
-     "rating": 4.5, "tags": ["hutan", "goa", "hiking"]},
+     "rating": 4.5, "tags": ["hutan", "goa", "hiking"],
+     "stay_detail": "Masuk & jalan ke goa Jepang 20', eksplorasi goa 25', trek ke goa Belanda 30', keliling taman 40', foto 20', kembali 15'"},
     {"id": "gunung-batu-lembang", "name": "Gunung Batu Lembang", "category": "Alam",
      "desc": "Bukit batu vulkanik kecil dengan view 360 derajat Lembang dan sekitarnya",
-     "ticket": 10000, "duration": 90, "lat": -6.8208, "lng": 107.6238,
-     "rating": 4.3, "tags": ["sunrise", "hiking", "view"]},
+     "ticket": 10000, "duration": 105, "lat": -6.8208, "lng": 107.6238,
+     "rating": 4.3, "tags": ["sunrise", "hiking", "view"],
+     "stay_detail": "Persiapan & mulai hiking 10', naik ke puncak 30', foto & view 360° 30', turun 25', istirahat 10'"},
     {"id": "situ-lembang", "name": "Situ Lembang", "category": "Alam",
      "desc": "Danau yang dikelilingi hutan pinus, tenang dan asri di kawasan Lembang",
      "ticket": 10000, "duration": 90, "lat": -6.7880, "lng": 107.6063,
-     "rating": 4.3, "tags": ["danau", "tenang", "alam"]},
+     "rating": 4.3, "tags": ["danau", "tenang", "alam"],
+     "stay_detail": "Parkir & jalan ke danau 10', keliling danau & foto 40', santai di bawah pinus 30', kembali 10'"},
     {"id": "curug-malela", "name": "Curug Malela", "category": "Alam",
      "desc": "Air terjun bertingkat luas yang dijuluki Niagara mini-nya Bandung Barat",
      "ticket": 15000, "duration": 180, "lat": -6.9181, "lng": 107.3119,
-     "rating": 4.5, "tags": ["air-terjun", "petualangan", "alam-liar"]},
+     "rating": 4.5, "tags": ["air-terjun", "petualangan", "alam-liar"],
+     "stay_detail": "Trek ke air terjun 40', nikmati & foto 45', main air 30', istirahat & makan bekal 25', trek kembali 40'"},
     {"id": "ranca-upas", "name": "Ranca Upas", "category": "Alam",
      "desc": "Bumi perkemahan dengan penangkaran rusa di tengah hutan pinus Ciwidey",
-     "ticket": 25000, "duration": 150, "lat": -7.1432, "lng": 107.3779,
-     "rating": 4.4, "tags": ["camping", "rusa", "hutan"]},
+     "ticket": 25000, "duration": 135, "lat": -7.1432, "lng": 107.3779,
+     "rating": 4.4, "tags": ["camping", "rusa", "hutan"],
+     "stay_detail": "Masuk & jalan ke penangkaran 15', beri makan rusa 35', keliling hutan pinus 40', istirahat & jajan 30', kembali 15'"},
 
     # KULINER (7 tambahan)
     {"id": "warung-nasi-ampera", "name": "Warung Nasi Ampera", "category": "Kuliner",
      "desc": "Rumah makan Sunda legendaris dengan lalapan dan sambal khas",
-     "ticket": 50000, "duration": 60, "lat": -6.9182, "lng": 107.6101,
-     "rating": 4.3, "tags": ["sunda", "legendaris", "halal"]},
+     "ticket": 50000, "duration": 75, "lat": -6.9182, "lng": 107.6101,
+     "rating": 4.3, "tags": ["sunda", "legendaris", "halal"],
+     "stay_detail": "Antri & cari meja 15', pilih lauk & pesan 10', makan nasi Sunda 35', bayar 15'"},
     {"id": "mie-kocok-mang-dadeng", "name": "Mie Kocok Mang Dadeng", "category": "Kuliner",
      "desc": "Mie kocok khas Bandung dengan kuah kaldu sapi gurih sejak 1960-an",
-     "ticket": 35000, "duration": 45, "lat": -6.9075, "lng": 107.6094,
-     "rating": 4.5, "tags": ["mie", "khas-bandung", "legendaris"]},
+     "ticket": 35000, "duration": 60, "lat": -6.9075, "lng": 107.6094,
+     "rating": 4.5, "tags": ["mie", "khas-bandung", "legendaris"],
+     "stay_detail": "Antri (bisa ramai) 15', pesan & tunggu masak 10', makan mie kocok 25', bayar 10'"},
     {"id": "kupat-tahu-gempol", "name": "Kupat Tahu Gempol", "category": "Kuliner",
      "desc": "Kupat tahu dengan bumbu kacang khas pasar Gempol, sarapan favorit warga",
-     "ticket": 20000, "duration": 45, "lat": -6.9075, "lng": 107.6135,
-     "rating": 4.4, "tags": ["sarapan", "tradisional", "murah"]},
+     "ticket": 20000, "duration": 50, "lat": -6.9075, "lng": 107.6135,
+     "rating": 4.4, "tags": ["sarapan", "tradisional", "murah"],
+     "stay_detail": "Antri 10', pesan & tunggu 10', makan kupat tahu 20', bayar 10'"},
     {"id": "batagor-riri", "name": "Batagor Riri", "category": "Kuliner",
      "desc": "Batagor renyah dengan saus kacang manis-pedas khas Burangrang",
-     "ticket": 25000, "duration": 45, "lat": -6.9223, "lng": 107.6116,
-     "rating": 4.4, "tags": ["batagor", "khas-bandung", "jajanan"]},
+     "ticket": 25000, "duration": 50, "lat": -6.9223, "lng": 107.6116,
+     "rating": 4.4, "tags": ["batagor", "khas-bandung", "jajanan"],
+     "stay_detail": "Antri beli 10', tunggu goreng fresh 10', makan batagor 20', beli oleh-oleh 10'"},
     {"id": "warung-koffie-batavia", "name": "Warung Koffie Batavia", "category": "Kuliner",
      "desc": "Kafe bernuansa kolonial dengan aneka kopi nusantara di Jalan Braga",
      "ticket": 60000, "duration": 90, "lat": -6.9161, "lng": 107.6094,
-     "rating": 4.4, "tags": ["kopi", "heritage", "kafe"]},
+     "rating": 4.4, "tags": ["kopi", "heritage", "kafe"],
+     "stay_detail": "Masuk & pilih meja 10', pesan kopi & makanan 10', tunggu 15', ngopi santai 40', bayar 15'"},
     {"id": "sindang-reret", "name": "Restoran Sindang Reret", "category": "Kuliner",
      "desc": "Restoran Sunda dengan saung lesehan dan menu nasi liwet di Cikole",
-     "ticket": 75000, "duration": 90, "lat": -6.7778, "lng": 107.6499,
-     "rating": 4.3, "tags": ["sunda", "saung", "keluarga"]},
+     "ticket": 75000, "duration": 100, "lat": -6.7778, "lng": 107.6499,
+     "rating": 4.3, "tags": ["sunda", "saung", "keluarga"],
+     "stay_detail": "Cari saung & duduk 10', pesan 10', tunggu nasi liwet 20', makan bersama 40', foto & istirahat 20'"},
     {"id": "the-valley-bistro", "name": "The Valley Bistro Cafe", "category": "Kuliner",
      "desc": "Bistro berlokasi di lembah Dago dengan view dramatis kota Bandung",
-     "ticket": 100000, "duration": 90, "lat": -6.8580, "lng": 107.6290,
-     "rating": 4.4, "tags": ["bistro", "view", "romantis"]},
+     "ticket": 100000, "duration": 105, "lat": -6.8580, "lng": 107.6290,
+     "rating": 4.4, "tags": ["bistro", "view", "romantis"],
+     "stay_detail": "Reservasi/antri meja outdoor 15', pesan & tunggu 20', makan & nikmati view 45', foto 15', bayar 10'"},
 
     # BUDAYA (7 tambahan)
     {"id": "museum-konferensi-asia-afrika", "name": "Museum Konferensi Asia Afrika", "category": "Budaya",
      "desc": "Museum sejarah KAA 1955 di Gedung Merdeka, Jalan Asia Afrika",
      "ticket": 0, "duration": 90, "lat": -6.9211, "lng": 107.6098,
-     "rating": 4.6, "tags": ["sejarah", "diplomasi", "gratis"]},
+     "rating": 4.6, "tags": ["sejarah", "diplomasi", "gratis"],
+     "stay_detail": "Registrasi 10', keliling ruang konferensi & diorama 40', baca panel sejarah 25', foto 15'"},
     {"id": "museum-sri-baduga", "name": "Museum Sri Baduga", "category": "Budaya",
      "desc": "Museum koleksi etnografi Sunda di kawasan Tegallega",
      "ticket": 5000, "duration": 90, "lat": -6.9367, "lng": 107.5996,
-     "rating": 4.3, "tags": ["sunda", "edukasi", "etnografi"]},
+     "rating": 4.3, "tags": ["sunda", "edukasi", "etnografi"],
+     "stay_detail": "Beli tiket 10', keliling koleksi etnografi 40', area keris & wayang 25', foto 15'"},
     {"id": "museum-pos-indonesia", "name": "Museum Pos Indonesia", "category": "Budaya",
      "desc": "Koleksi prangko, alat pos antik, dan sejarah perposan nasional",
      "ticket": 0, "duration": 60, "lat": -6.9018, "lng": 107.6193,
-     "rating": 4.2, "tags": ["sejarah", "prangko", "gratis"]},
+     "rating": 4.2, "tags": ["sejarah", "prangko", "gratis"],
+     "stay_detail": "Masuk & registrasi 10', koleksi prangko & alat pos 30', ruang sejarah 15', foto 5'"},
     {"id": "monumen-perjuangan-jabar", "name": "Monumen Perjuangan Rakyat Jawa Barat", "category": "Budaya",
      "desc": "Monumen perjuangan dengan diorama sejarah di seberang Gasibu",
-     "ticket": 5000, "duration": 60, "lat": -6.8924, "lng": 107.6207,
-     "rating": 4.3, "tags": ["sejarah", "monumen", "edukasi"]},
+     "ticket": 5000, "duration": 75, "lat": -6.8924, "lng": 107.6207,
+     "rating": 4.3, "tags": ["sejarah", "monumen", "edukasi"],
+     "stay_detail": "Beli tiket 10', naik ke lantai diorama 15', lihat semua diorama 35', foto monumen 15'"},
     {"id": "taman-budaya-jawa-barat", "name": "Taman Budaya Jawa Barat", "category": "Budaya",
      "desc": "Pusat pertunjukan seni Sunda dengan amphitheater dan galeri",
      "ticket": 10000, "duration": 90, "lat": -6.8556, "lng": 107.6202,
-     "rating": 4.2, "tags": ["pertunjukan", "seni", "sunda"]},
+     "rating": 4.2, "tags": ["pertunjukan", "seni", "sunda"],
+     "stay_detail": "Masuk & lihat jadwal 10', keliling galeri seni 30', nonton pertunjukan 35', foto amphitheater 15'"},
     {"id": "vihara-vipassana-graha", "name": "Vihara Vipassana Graha", "category": "Budaya",
      "desc": "Vihara Buddhis dengan arsitektur khas dan taman meditasi di Lembang",
      "ticket": 0, "duration": 60, "lat": -6.7949, "lng": 107.6242,
-     "rating": 4.5, "tags": ["religi", "tenang", "arsitektur"]},
+     "rating": 4.5, "tags": ["religi", "tenang", "arsitektur"],
+     "stay_detail": "Masuk & lepas sepatu 5', keliling vihara & taman 30', meditasi/duduk tenang 15', foto 10'"},
     {"id": "masjid-raya-bandung", "name": "Masjid Raya Bandung", "category": "Budaya",
      "desc": "Masjid agung kota Bandung dengan dua menara ikonik di Alun-Alun",
      "ticket": 0, "duration": 60, "lat": -6.9215, "lng": 107.6071,
-     "rating": 4.7, "tags": ["religi", "ikon", "alun-alun"]},
+     "rating": 4.7, "tags": ["religi", "ikon", "alun-alun"],
+     "stay_detail": "Wudhu & persiapan 10', sholat/keliling interior 25', foto eksterior & menara 15', jalan di alun-alun 10'"},
 
     # WISATA (7 tambahan)
     {"id": "the-lodge-maribaya", "name": "The Lodge Maribaya", "category": "Wisata",
      "desc": "Spot foto ikonik dengan ayunan langit dan sky bridge di hutan pinus",
-     "ticket": 50000, "duration": 120, "lat": -6.8154, "lng": 107.6593,
-     "rating": 4.4, "tags": ["fotogenik", "ayunan", "hutan"]},
+     "ticket": 50000, "duration": 135, "lat": -6.8154, "lng": 107.6593,
+     "rating": 4.4, "tags": ["fotogenik", "ayunan", "hutan"],
+     "stay_detail": "Antri masuk 15', antri & naik sky bridge 25', antri & foto ayunan 25', spot foto lain 35', jajan 20', kembali 15'"},
     {"id": "kampung-daun", "name": "Kampung Daun Culture Gallery", "category": "Wisata",
      "desc": "Resto-galeri bertema desa Sunda dengan saung di tengah hutan Cihideung",
      "ticket": 30000, "duration": 120, "lat": -6.8403, "lng": 107.5786,
-     "rating": 4.5, "tags": ["sunda", "saung", "romantis"]},
+     "rating": 4.5, "tags": ["sunda", "saung", "romantis"],
+     "stay_detail": "Masuk & jalan ke saung 15', pesan makanan 10', tunggu masakan 20', makan di saung 40', keliling galeri 20', foto 15'"},
     {"id": "observatorium-bosscha", "name": "Observatorium Bosscha", "category": "Wisata",
      "desc": "Observatorium tertua di Indonesia dengan teleskop bersejarah di Lembang",
-     "ticket": 20000, "duration": 90, "lat": -6.8244, "lng": 107.6166,
-     "rating": 4.5, "tags": ["edukasi", "astronomi", "sejarah"]},
+     "ticket": 20000, "duration": 105, "lat": -6.8244, "lng": 107.6166,
+     "rating": 4.5, "tags": ["edukasi", "astronomi", "sejarah"],
+     "stay_detail": "Registrasi & kumpul grup 15', presentasi astronomi 30', lihat teleskop 20', tanya jawab 15', foto & keliling 15', kembali 10'"},
     {"id": "kebun-binatang-bandung", "name": "Kebun Binatang Bandung", "category": "Wisata",
      "desc": "Kebun binatang klasik kota dengan koleksi satwa nusantara",
-     "ticket": 50000, "duration": 150, "lat": -6.8919, "lng": 107.6067,
-     "rating": 4.0, "tags": ["keluarga", "satwa", "edukasi"]},
+     "ticket": 50000, "duration": 165, "lat": -6.8919, "lng": 107.6067,
+     "rating": 4.0, "tags": ["keluarga", "satwa", "edukasi"],
+     "stay_detail": "Beli tiket & masuk 15', area mamalia 35', reptil & burung 30', primata 25', istirahat & makan 30', souvenir 15', kembali 15'"},
     {"id": "taman-film-bandung", "name": "Taman Film Bandung", "category": "Wisata",
      "desc": "Taman tematik di bawah jalan layang Pasupati dengan layar film outdoor",
      "ticket": 0, "duration": 60, "lat": -6.8959, "lng": 107.6125,
-     "rating": 4.2, "tags": ["taman", "gratis", "kreatif"]},
+     "rating": 4.2, "tags": ["taman", "gratis", "kreatif"],
+     "stay_detail": "Jalan masuk & cari spot 10', nonton film pendek 20', foto mural & instalasi 20', santai 10'"},
     {"id": "sky-lantern-lembang", "name": "Lembang Park & Zoo", "category": "Wisata",
      "desc": "Taman wisata dengan kebun binatang mini dan wahana keluarga di Lembang",
      "ticket": 50000, "duration": 150, "lat": -6.8137, "lng": 107.6172,
-     "rating": 4.3, "tags": ["keluarga", "satwa", "wahana"]},
+     "rating": 4.3, "tags": ["keluarga", "satwa", "wahana"],
+     "stay_detail": "Antri masuk 15', kebun binatang mini 35', wahana anak 30', taman & foto 25', makan & istirahat 30', belanja 15'"},
     {"id": "orchid-forest-cikole", "name": "Orchid Forest Cikole", "category": "Wisata",
      "desc": "Taman hutan pinus dengan koleksi anggrek dan wood bridge fotogenik",
      "ticket": 50000, "duration": 120, "lat": -6.7796, "lng": 107.6531,
-     "rating": 4.5, "tags": ["fotogenik", "anggrek", "hutan-pinus"]},
+     "rating": 4.5, "tags": ["fotogenik", "anggrek", "hutan-pinus"],
+     "stay_detail": "Masuk & jalan ke bridge 15', foto di wood bridge 20', kebun anggrek 30', hammock & hutan pinus 30', jajan 25'"},
 
     # BELANJA (7 tambahan)
     {"id": "btc-fashion-mall", "name": "BTC Fashion Mall", "category": "Belanja",
      "desc": "Mall fashion grosir di kawasan Pasteur dengan pilihan harga ekonomis",
-     "ticket": 0, "duration": 120, "lat": -6.8917, "lng": 107.5745,
-     "rating": 4.0, "tags": ["fashion", "grosir", "mall"]},
+     "ticket": 0, "duration": 105, "lat": -6.8917, "lng": 107.5745,
+     "rating": 4.0, "tags": ["fashion", "grosir", "mall"],
+     "stay_detail": "Parkir & masuk 10', keliling lantai fashion 40', coba & pilih baju 30', tawar & bayar 15', kembali 10'"},
     {"id": "rumah-mode", "name": "Outlet Rumah Mode", "category": "Belanja",
      "desc": "Factory outlet veteran di Setiabudhi dengan koleksi branded berdiskon",
-     "ticket": 0, "duration": 120, "lat": -6.8601, "lng": 107.5926,
-     "rating": 4.3, "tags": ["factory-outlet", "branded", "diskon"]},
+     "ticket": 0, "duration": 105, "lat": -6.8601, "lng": 107.5926,
+     "rating": 4.3, "tags": ["factory-outlet", "branded", "diskon"],
+     "stay_detail": "Parkir & masuk 10', keliling rak branded 40', fitting room 25', antri kasir 20', kembali 10'"},
     {"id": "23-paskal", "name": "23 Paskal Shopping Center", "category": "Belanja",
      "desc": "Mall modern dekat stasiun dengan tenant fashion, kuliner, dan bioskop",
      "ticket": 0, "duration": 120, "lat": -6.9135, "lng": 107.5969,
-     "rating": 4.4, "tags": ["mall", "modern", "kuliner"]},
+     "rating": 4.4, "tags": ["mall", "modern", "kuliner"],
+     "stay_detail": "Parkir & masuk 10', window shopping 30', belanja fashion 30', makan di food court 35', bayar parkir 15'"},
     {"id": "pasar-baru-lembang", "name": "Pasar Baru Lembang", "category": "Belanja",
      "desc": "Pasar tradisional Lembang dengan sayur, buah, dan oleh-oleh khas",
-     "ticket": 0, "duration": 90, "lat": -6.8126, "lng": 107.6178,
-     "rating": 4.2, "tags": ["pasar", "tradisional", "oleh-oleh"]},
+     "ticket": 0, "duration": 75, "lat": -6.8126, "lng": 107.6178,
+     "rating": 4.2, "tags": ["pasar", "tradisional", "oleh-oleh"],
+     "stay_detail": "Parkir & masuk pasar 10', keliling sayur & buah 20', beli oleh-oleh 25', tawar harga 10', kembali 10'"},
     {"id": "cibaduyut", "name": "Cibaduyut Shoes Center", "category": "Belanja",
      "desc": "Sentra produksi sepatu kulit handmade tertua di Indonesia",
-     "ticket": 0, "duration": 120, "lat": -6.9624, "lng": 107.6021,
-     "rating": 4.2, "tags": ["sepatu", "kulit", "handmade"]},
+     "ticket": 0, "duration": 105, "lat": -6.9624, "lng": 107.6021,
+     "rating": 4.2, "tags": ["sepatu", "kulit", "handmade"],
+     "stay_detail": "Parkir & jalan ke sentra 10', keliling toko sepatu 35', coba model 25', tawar & bayar 20', bungkus 15'"},
     {"id": "paris-van-java", "name": "Paris Van Java Mall", "category": "Belanja",
      "desc": "Mall lifestyle outdoor di Sukajadi dengan suasana al-fresco",
      "ticket": 0, "duration": 120, "lat": -6.8908, "lng": 107.5957,
-     "rating": 4.5, "tags": ["mall", "outdoor", "lifestyle"]},
+     "rating": 4.5, "tags": ["mall", "outdoor", "lifestyle"],
+     "stay_detail": "Parkir & masuk 10', jalan outdoor area 25', belanja tenant 35', ngopi di kafe 30', bayar parkir 10', kembali 10'"},
     {"id": "trans-studio-mall", "name": "Trans Studio Mall Bandung", "category": "Belanja",
      "desc": "Mall premium yang terhubung dengan Trans Studio theme park",
      "ticket": 0, "duration": 120, "lat": -6.9265, "lng": 107.6364,
-     "rating": 4.5, "tags": ["mall", "premium", "kuliner"]},
+     "rating": 4.5, "tags": ["mall", "premium", "kuliner"],
+     "stay_detail": "Parkir & masuk 10', keliling tenant premium 35', belanja 30', makan di restoran 30', bayar parkir 15'"},
 ]
 
 manual_df = pd.DataFrame(SEED_DESTINATIONS + EXTRA_DESTINATIONS)
@@ -484,15 +605,26 @@ def fuzzy_match(a: str, b: str) -> float:
     return len(ta & tb) / len(ta | tb)
 
 
+def is_likely_duplicate(osm_name: str, seed_name: str) -> bool:
+    """Lebih ketat dari fuzzy: substring atau jaccard >0.6."""
+    a = re.sub(r"[^a-z0-9 ]+", " ", str(osm_name).lower()).strip()
+    b = re.sub(r"[^a-z0-9 ]+", " ", str(seed_name).lower()).strip()
+    if not a or not b:
+        return False
+    if a == b or a in b or b in a:
+        return True
+    return fuzzy_match(a, b) > 0.6
+
+
 def merge_with_dedup(manual: pd.DataFrame, osm: pd.DataFrame) -> pd.DataFrame:
-    """Merge manual (priority) + osm, drop duplikat fuzzy >0.8."""
+    """Merge manual (priority) + osm, drop duplikat (substring atau jaccard >0.6)."""
     if osm is None or len(osm) == 0:
         return manual.copy()
     manual_names = manual["name"].tolist()
     keep_rows = []
     for _, r in osm.iterrows():
         nm = r["name"]
-        if any(fuzzy_match(nm, m) > 0.8 for m in manual_names):
+        if any(is_likely_duplicate(nm, m) for m in manual_names):
             continue
         keep_rows.append(r)
     osm_unique = pd.DataFrame(keep_rows)
@@ -501,19 +633,29 @@ def merge_with_dedup(manual: pd.DataFrame, osm: pd.DataFrame) -> pd.DataFrame:
 
 df_enriched = merge_with_dedup(manual_df, df_osm if "df_osm" in dir() else pd.DataFrame())
 
+# ---------- Pastikan SEMUA kolom yang dibutuhkan ada (defensive) ----------
+EXPECTED_COLS = {
+    "id": None, "name": None, "category": None,
+    "desc": None, "ticket": None, "duration": None,
+    "rating": None, "tags": None, "lat": None, "lng": None,
+    "source": "osm" if not df_enriched.empty else "manual",
+    "gmaps_url": None,
+}
+for col, default in EXPECTED_COLS.items():
+    if col not in df_enriched.columns:
+        df_enriched[col] = default
+
 # ---------- Isi field default untuk record OSM ----------
 df_enriched["id"] = df_enriched.apply(
     lambda r: r["id"] if pd.notna(r.get("id")) and str(r.get("id")).strip() else slugify(r["name"]),
     axis=1,
 )
-df_enriched["desc"] = df_enriched.get("desc")
 df_enriched["desc"] = df_enriched["desc"].fillna(
-    df_enriched["category"].apply(lambda c: f"Destinasi wisata {c} di Bandung"))
-df_enriched["ticket"] = df_enriched.get("ticket")
-df_enriched["duration"] = df_enriched.get("duration")
-df_enriched["rating"] = df_enriched.get("rating")
-df_enriched["tags"] = df_enriched.get("tags")
-df_enriched["tags"] = df_enriched["tags"].apply(lambda x: x if isinstance(x, list) else [])
+    df_enriched["category"].apply(lambda c: f"Destinasi wisata {c} di Bandung")
+)
+df_enriched["tags"] = df_enriched["tags"].apply(
+    lambda x: x if isinstance(x, list) else []
+)
 df_enriched["gmaps_url"] = df_enriched["name"].apply(generate_gmaps_url)
 
 # Drop duplikat id (jaga seed dulu)
@@ -533,12 +675,18 @@ VALID_CATEGORIES = {"Alam", "Kuliner", "Budaya", "Wisata", "Belanja"}
 
 # Default fallback jika semua nilai kategori NaN
 DEFAULT_TICKET = {"Alam": 20000, "Kuliner": 35000, "Budaya": 10000, "Wisata": 50000, "Belanja": 0}
-DEFAULT_DURATION = {"Alam": 120, "Kuliner": 60, "Budaya": 90, "Wisata": 120, "Belanja": 120}
+DEFAULT_DURATION = {"Alam": 120, "Kuliner": 75, "Budaya": 80, "Wisata": 135, "Belanja": 105}
 DEFAULT_RATING = 4.2
 
 
 def clean_destinations(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
+
+    # 0. Pastikan semua kolom wajib ada (idempotent)
+    for col in ("id", "name", "category", "desc", "ticket", "duration",
+                "rating", "tags", "lat", "lng", "gmaps_url", "stay_detail"):
+        if col not in df.columns:
+            df[col] = pd.NA
 
     # 1. Rename lon → lng (jika masih ada)
     if "lon" in df.columns and "lng" not in df.columns:
@@ -570,6 +718,7 @@ def clean_destinations(df: pd.DataFrame) -> pd.DataFrame:
 
     df["desc"] = df["desc"].fillna(df["category"].apply(lambda c: f"Destinasi wisata {c} di Bandung"))
     df["tags"] = df["tags"].apply(lambda x: x if isinstance(x, list) else [])
+    df["stay_detail"] = df["stay_detail"].fillna("")
 
     # 4. Type casting
     df["ticket"] = df["ticket"].astype(float).round().astype(int)
@@ -676,6 +825,15 @@ df_feat["tags_str"] = df_feat["tags"].apply(
 tfidf = TfidfVectorizer(max_features=20, min_df=1)
 tfidf_matrix = tfidf.fit_transform(df_feat["tags_str"]).toarray()
 
+# (c.1) MinMax normalize TF-IDF agar magnitude-nya sebanding dengan one-hot/numeric
+# (raw TF-IDF L2-normalized → kolom kecil; ini meningkatkan kontribusi dim tags
+#  pada cosine similarity tanpa mendominasi kolom kategori one-hot)
+tfidf_scaler = MinMaxScaler()
+if tfidf_matrix.shape[1] > 0 and tfidf_matrix.max() > 0:
+    tfidf_matrix = tfidf_scaler.fit_transform(tfidf_matrix)
+else:
+    tfidf_scaler = None
+
 # (d) Gabungkan
 feature_matrix = np.hstack([category_onehot, numeric_normalized, tfidf_matrix])
 print(f"✅ Feature matrix shape: {feature_matrix.shape}")
@@ -691,6 +849,7 @@ encoders = {
     "label_encoder_category": le_category,
     "scaler": scaler,
     "tfidf": tfidf,
+    "tfidf_scaler": tfidf_scaler,
     "feature_cols": numeric_cols,
     "category_order": CATEGORY_ORDER,
     "n_category_dims": category_onehot.shape[1],
@@ -1053,16 +1212,26 @@ class BandungTravelEnv:
     def _get_state(self):
         n_sel = min(8, len(self.selected))
         budget_total = self.params["budget"]
+        # Bucket sesuai spec README:
+        # 0 = habis, 1 = <25%, 2 = <50%, 3 = <75%, 4 = >=75% sisa
         if budget_total <= 0:
             budget_level = 0
+        elif budget_total >= 999_999_998:
+            # Effectively no budget limit
+            budget_level = 4
         else:
             ratio = max(0.0, 1.0 - self.spent / budget_total)
-            budget_level = min(4, int(ratio * 4 + 1e-9))
-            if ratio >= 0.75:
+            if ratio <= 0.0:
+                budget_level = 0
+            elif ratio < 0.25:
+                budget_level = 1
+            elif ratio < 0.50:
+                budget_level = 2
+            elif ratio < 0.75:
+                budget_level = 3
+            else:
                 budget_level = 4
-        time_total = max(1, self.params["endMin"] - self.params["startMin"])
         time_left = max(0, self.params["endMin"] - self.cur_time)
-        time_ratio = time_left / time_total
         if time_left <= 0:
             time_level = 0
         elif time_left < 120:
@@ -1109,13 +1278,18 @@ class BandungTravelEnv:
 
     def _calculate_reward(self, dest_row, travel_km: float) -> float:
         rating_score = float(dest_row["rating"]) / 5.0
-        cats_chosen = {self.df.iloc[i]["category"] for i in self.selected}
+        # NOTE: dest_row sudah masuk ke self.selected & self.spent saat method ini dipanggil
+        # (lihat step()), jadi cek variety harus exclude destinasi terakhir,
+        # dan budget_eff tidak boleh mengurangi ticket lagi (sudah termasuk di self.spent).
+        prior_selected = self.selected[:-1] if self.selected else []
+        cats_chosen = {self.df.iloc[i]["category"] for i in prior_selected}
         variety = 0.2 if dest_row["category"] not in cats_chosen else 0.0
+
         budget_total = self.params["budget"]
         if budget_total <= 0 or budget_total >= 999_999_998:
             budget_eff = 0.5
         else:
-            remain = max(0, budget_total - self.spent - int(dest_row["ticket"]))
+            remain = max(0, budget_total - self.spent)  # spent already includes current ticket
             budget_eff = remain / budget_total
 
         w = self.REWARD_WEIGHTS
@@ -1364,6 +1538,10 @@ class RouteOptimizer:
     def __init__(self, use_osrm: bool = True, osrm_timeout: float = 5.0):
         self.use_osrm = use_osrm
         self.osrm_timeout = osrm_timeout
+        # In-memory cache supaya panggilan ulang antar segment (mis. return trip
+        # atau evaluasi 100x) tidak menghantam OSRM public berkali-kali.
+        # Key: tuple koordinat dibulatkan ke 4 desimal (~11 m presisi).
+        self._osrm_cache = {}
 
     def haversine_km(self, lat1, lng1, lat2, lng2) -> float:
         return haversine_km(lat1, lng1, lat2, lng2)
@@ -1373,15 +1551,21 @@ class RouteOptimizer:
         if not self.use_osrm:
             d = self.haversine_km(lat1, lng1, lat2, lng2)
             return d, (d / self.SPEED_KMH) * 60
+        key = (round(lat1, 4), round(lng1, 4), round(lat2, 4), round(lng2, 4))
+        if key in self._osrm_cache:
+            return self._osrm_cache[key]
         try:
             url = f"{self.OSRM_BASE}/{lng1},{lat1};{lng2},{lat2}?overview=false"
             resp = requests.get(url, timeout=self.osrm_timeout)
             resp.raise_for_status()
             route = resp.json()["routes"][0]
-            return route["distance"] / 1000.0, route["duration"] / 60.0
-        except Exception as e:
+            dist_km = route["distance"] / 1000.0
+            dur_min = route["duration"] / 60.0
+        except Exception:
             d = self.haversine_km(lat1, lng1, lat2, lng2)
-            return d, (d / self.SPEED_KMH) * 60
+            dist_km, dur_min = d, (d / self.SPEED_KMH) * 60
+        self._osrm_cache[key] = (dist_km, dur_min)
+        return dist_km, dur_min
 
     def nearest_neighbor_route(self, home: dict, destinations: list) -> list:
         if not destinations:
@@ -1434,6 +1618,7 @@ class RouteOptimizer:
                     "rating": float(dest.get("rating", 4.0)),
                     "tags": list(tags) if tags else [],
                     "gmaps_url": dest.get("gmaps_url") or generate_gmaps_url(dest.get("name", "")),
+                    "stay_detail": dest.get("stay_detail", ""),
                 },
                 "travelMin": int(round(travel_min)),
                 "travelKm": round(float(travel_km), 2),
@@ -1451,7 +1636,8 @@ class RouteOptimizer:
         return_km, return_min = self.osrm_travel_time(cur_lat, cur_lng, home["lat"], home["lng"])
         arrive_home = cur_time + int(round(return_min))
         total_km += float(return_km)
-        total_time = total_visit_time + sum(s["travelMin"] for s in steps) + int(round(return_min))
+        # totalTime = waktu total dari berangkat sampai tiba kembali (sesuai kontrak frontend)
+        total_time = int(arrive_home - start_min)
 
         spare = end_min - arrive_home
         return {
@@ -1481,7 +1667,9 @@ print("📍 Sample itinerary (4 destinasi):")
 for s in itin["steps"]:
     a = f"{s['arriveAt']//60:02d}:{s['arriveAt']%60:02d}"
     d = f"{s['departAt']//60:02d}:{s['departAt']%60:02d}"
-    print(f"  {s['idx']}. {s['dest']['name']:<28} | {a}-{d} | {s['travelKm']:.1f} km")
+    print(f"  {s['idx']}. {s['dest']['name']:<28} | {a}-{d} | {s['travelKm']:.1f} km | stay {s['dest']['duration']} mnt")
+    if s['dest'].get('stay_detail'):
+        print(f"      ⏱️  {s['dest']['stay_detail']}")
 print(f"\\n💰 Total: Rp {itin['totalCost']:,} | 📏 {itin['totalKm']:.1f} km | 🏠 tiba {itin['arriveHome']//60:02d}:{itin['arriveHome']%60:02d}")
 ''')
 
@@ -1491,35 +1679,74 @@ NB01_CELLS_PART_B = [CELL_8, CELL_9, CELL_10, CELL_11, CELL_12, CELL_13, CELL_14
 
 # ---------- CELL 16: Integration test ----------
 CELL_16 = code('''# ============================================================
-# CELL 16 — Integration Test (Full Pipeline)
+# CELL 16 — Integration Test (Full Pipeline) + Edge Cases
 # ============================================================
 def rl_select_destinations(env: BandungTravelEnv, agent: QLearningAgent,
                             params: dict) -> list:
-    """Inference RL: gunakan greedy policy (epsilon=0) untuk memilih destinasi."""
+    """Inference RL: greedy policy (epsilon=0). Tidak melakukan double-append —
+    bergantung pada env.selected sebagai sumber kebenaran."""
     saved_eps = agent.epsilon
     agent.epsilon = 0.0
     try:
         state, candidates = env.reset(params)
         candidate_ids = [env.df.iloc[i]["id"] for i in candidates]
-        selected_rows = []
         done = False
-        while not done and len(selected_rows) < params.get("count", 4):
+        target = max(1, int(params.get("count", 4)))
+        while not done and len(env.selected) < target:
             valid = env.get_valid_actions()
             if not valid:
                 break
             action = agent.choose_action(state, valid, candidate_ids)
             if action < 0 or action >= len(env.candidates):
                 break
-            idx = env.candidates[action]
-            selected_rows.append(env.df.iloc[idx].to_dict())
             state, _, done, _ = env.step(action)
-        return selected_rows
+        # Pakai env.selected sebagai single source of truth
+        return [env.df.iloc[i].to_dict() for i in env.selected]
     finally:
         agent.epsilon = saved_eps
 
 
+def _smart_fallback_fill(selected: list, params: dict, target: int) -> list:
+    """Lengkapi `selected` dengan kandidat CBF yang tetap menghormati
+    sisa budget, sisa waktu, dan max_km dari home."""
+    if len(selected) >= target:
+        return selected
+    home_lat = params["home"]["lat"]
+    home_lng = params["home"]["lng"]
+    spent = sum(int(d.get("ticket", 0)) for d in selected)
+    used_dur = sum(int(d.get("duration", 0)) for d in selected)
+    # Penting: budget=0 valid (artinya hanya gratis), bukan "no limit"
+    has_budget = params.get("budget") is not None
+    remaining_budget = (params["budget"] - spent) if has_budget else None
+    remaining_time = max(0, params["endMin"] - params["startMin"] - used_dur)
+
+    rec = cbf_model.recommend(
+        categories=params.get("categories", []),
+        budget=remaining_budget,
+        max_km=params.get("maxKm"),
+        home_lat=home_lat, home_lng=home_lng,
+        top_n=30,
+    )
+    seen = {d["id"] for d in selected}
+    for _, r in rec.iterrows():
+        if len(selected) >= target:
+            break
+        if r["id"] in seen:
+            continue
+        if has_budget and int(r.get("ticket", 0)) > remaining_budget:
+            continue
+        if int(r.get("duration", 60)) > remaining_time:
+            continue
+        selected.append(r.to_dict())
+        seen.add(r["id"])
+        spent += int(r.get("ticket", 0))
+        if has_budget:
+            remaining_budget -= int(r.get("ticket", 0))
+        remaining_time -= int(r.get("duration", 60))
+    return selected
+
+
 def full_pipeline_test(params: dict) -> dict:
-    # 1+2: RL-guided selection (CBF candidates dipakai di env.reset)
     selected = rl_select_destinations(env, rl_agent, {
         "categories": params.get("categories", []),
         "budget": params.get("budget"),
@@ -1530,38 +1757,29 @@ def full_pipeline_test(params: dict) -> dict:
         "home_lat": params["home"]["lat"],
         "home_lng": params["home"]["lng"],
     })
-
-    # Fallback bila RL gagal mengisi: lengkapi dari CBF
-    if len(selected) < params.get("count", 4):
-        rec = cbf_model.recommend(
-            categories=params.get("categories", []),
-            budget=params.get("budget"),
-            max_km=params.get("maxKm"),
-            home_lat=params["home"]["lat"],
-            home_lng=params["home"]["lng"],
-            top_n=20,
-        )
-        seen = {d["id"] for d in selected}
-        for _, r in rec.iterrows():
-            if len(selected) >= params.get("count", 4):
-                break
-            if r["id"] not in seen:
-                selected.append(r.to_dict())
-                seen.add(r["id"])
-
-    # 3: Route ordering
+    selected = _smart_fallback_fill(selected, params, params.get("count", 4))
     ordered = optimizer.nearest_neighbor_route(params["home"], selected)
-    # 4: Itinerary
-    itin = optimizer.build_itinerary(
+    return optimizer.build_itinerary(
         home=params["home"],
         home_name=params["homeName"],
         ordered_destinations=ordered,
         start_min=params["startMin"],
         end_min=params["endMin"],
     )
-    return itin
 
 
+def _print_itinerary(label: str, params: dict, res: dict):
+    print(f"\\n{'='*60}\\n{label}\\n{'='*60}")
+    print(f"Destinasi terpilih: {len(res['steps'])}")
+    for s in res["steps"]:
+        a = f"{s['arriveAt']//60:02d}:{s['arriveAt']%60:02d}"
+        print(f"  {s['idx']}. {s['dest']['name']:<28} ({s['dest']['category']}) — tiba {a}")
+    print(f"💰 Total biaya: Rp {res['totalCost']:,}")
+    print(f"📏 Total jarak: {res['totalKm']:.1f} km | totalTime {res['totalTime']} mnt")
+    print(f"🏠 Tiba kembali: {res['arriveHome']//60:02d}:{res['arriveHome']%60:02d} | overTime: {res['overBudget']}")
+
+
+# ---------- 3 skenario utama ----------
 test_cases = [
     {"home": {"lat": -6.9215, "lng": 107.6071}, "homeName": "Alun-Alun Bandung",
      "count": 4, "maxKm": None, "startMin": 9 * 60, "endMin": 21 * 60,
@@ -1573,25 +1791,60 @@ test_cases = [
      "count": 5, "maxKm": None, "startMin": 10 * 60, "endMin": 20 * 60,
      "budget": None, "categories": ["Kuliner", "Budaya", "Belanja"]},
 ]
-
+main_results = []
 for i, p in enumerate(test_cases, 1):
-    print(f"\\n{'='*60}\\nTEST CASE {i}: {p['homeName']}\\n{'='*60}")
     res = full_pipeline_test(p)
-    print(f"Destinasi terpilih: {len(res['steps'])}")
-    for s in res["steps"]:
-        a = f"{s['arriveAt']//60:02d}:{s['arriveAt']%60:02d}"
-        print(f"  {s['idx']}. {s['dest']['name']:<28} ({s['dest']['category']}) — tiba {a}")
-    print(f"💰 Total biaya: Rp {res['totalCost']:,}")
-    print(f"📏 Total jarak: {res['totalKm']:.1f} km")
-    print(f"🏠 Tiba kembali: {res['arriveHome']//60:02d}:{res['arriveHome']%60:02d}")
-    print(f"⏰ Over time: {res['overBudget']}")
+    _print_itinerary(f"TEST CASE {i}: {p['homeName']}", p, res)
+    main_results.append(res)
+
+
+# ---------- Edge cases ----------
+print("\\n" + "#" * 60)
+print("# EDGE CASES")
+print("#" * 60)
+
+edge_cases = [
+    # Edge: budget = 0 → hanya destinasi gratis (ticket=0)
+    {"label": "Edge 1 — budget = 0 (hanya gratis)",
+     "params": {"home": {"lat": -6.9215, "lng": 107.6071}, "homeName": "Alun-Alun",
+                "count": 3, "maxKm": None, "startMin": 9 * 60, "endMin": 17 * 60,
+                "budget": 0, "categories": ["Budaya", "Belanja"]}},
+    # Edge: count > kandidat tersedia (count=8 + max_km kecil)
+    {"label": "Edge 2 — count > kandidat (max_km 5km, count=8)",
+     "params": {"home": {"lat": -6.9215, "lng": 107.6071}, "homeName": "Alun-Alun",
+                "count": 8, "maxKm": 5, "startMin": 8 * 60, "endMin": 22 * 60,
+                "budget": None, "categories": ["Kuliner", "Budaya"]}},
+    # Edge: semua kategori dipilih
+    {"label": "Edge 3 — semua kategori",
+     "params": {"home": {"lat": -6.9215, "lng": 107.6071}, "homeName": "Alun-Alun",
+                "count": 5, "maxKm": None, "startMin": 8 * 60, "endMin": 21 * 60,
+                "budget": 500_000,
+                "categories": ["Alam", "Kuliner", "Budaya", "Wisata", "Belanja"]}},
+    # Edge: tidak ada kategori dipilih (frontend kadang kirim list kosong)
+    {"label": "Edge 4 — tidak ada kategori (categories=[])",
+     "params": {"home": {"lat": -6.9215, "lng": 107.6071}, "homeName": "Alun-Alun",
+                "count": 3, "maxKm": None, "startMin": 9 * 60, "endMin": 19 * 60,
+                "budget": 300_000, "categories": []}},
+]
+for ec in edge_cases:
+    try:
+        res = full_pipeline_test(ec["params"])
+        _print_itinerary(ec["label"], ec["params"], res)
+        # Validasi soft: minimal 1 destinasi terambil (kecuali jika benar-benar mustahil)
+        if len(res["steps"]) == 0:
+            print("  ℹ️  0 destinasi — kondisi memang mustahil, fallback kosong.")
+    except Exception as e:
+        print(f"  ❌ {ec['label']} crashed: {e}")
 ''')
 
 
 # ---------- CELL 17: Evaluation ----------
 CELL_17 = code('''# ============================================================
-# CELL 17 — Evaluasi Model
+# CELL 17 — Evaluasi Model (re-seeded supaya reproducible)
 # ============================================================
+random.seed(RANDOM_SEED)
+np.random.seed(RANDOM_SEED)
+
 print("=== CBF Evaluation ===")
 # (1) Intra-list diversity
 diversities = []
@@ -1695,15 +1948,58 @@ print(f"  Route Optimization Improvement: {imp:.1f}%")
 
 # ---------- CELL 18: Export & summary ----------
 CELL_18 = code('''# ============================================================
-# CELL 18 — Export & Summary
+# CELL 18 — Export & Summary + Sample API Response
 # ============================================================
 print("\\n" + "=" * 60)
 print("📦 EXPORT SUMMARY — Bandung AI Travel Agent")
 print("=" * 60)
 
+# ---------- Sample API request + response (sesuai kontrak frontend) ----------
+sample_params = {
+    "home": {"lat": -6.9215, "lng": 107.6071},
+    "homeName": "Alun-Alun Bandung",
+    "count": 4,
+    "maxKm": None,
+    "startMin": 9 * 60,
+    "endMin": 21 * 60,
+    "budget": 500_000,
+    "categories": ["Alam", "Kuliner"],
+}
+sample_itinerary = full_pipeline_test(sample_params)
+sample_response = {
+    **sample_itinerary,
+    # story biasanya di-generate di Notebook 02 — di sini placeholder kosong
+    # supaya backend developer punya gambaran shape lengkap.
+    "story": {
+        "intro": "(akan di-generate oleh Notebook 02 / Groq API)",
+        "highlights": ["(per destinasi)"] * len(sample_itinerary["steps"]),
+        "tips": ["(2-4 tips praktis)"],
+        "closing": "(1 kalimat penutup)",
+        "vibe": "Alam & Kuliner",
+    },
+    "data_last_updated": str(date.today()),
+}
+
+with open("data/processed/sample_api_request.json", "w", encoding="utf-8") as f:
+    json.dump(sample_params, f, ensure_ascii=False, indent=2)
+with open("data/processed/sample_api_response.json", "w", encoding="utf-8") as f:
+    json.dump(sample_response, f, ensure_ascii=False, indent=2)
+print("✅ data/processed/sample_api_request.json")
+print("✅ data/processed/sample_api_response.json (story = placeholder)")
+
+# ---------- Validasi kontrak frontend (basic) ----------
+required_root = ["steps", "totalCost", "totalKm", "totalTime", "returnKm",
+                  "returnMin", "arriveHome", "overBudget", "spareMin",
+                  "story", "data_last_updated"]
+missing = [k for k in required_root if k not in sample_response]
+print(f"  Kontrak frontend (root keys): {'✅ lengkap' if not missing else '❌ missing: ' + str(missing)}")
+
+# ---------- Cek file model ----------
 files_to_check = [
     "data/processed/destinations.csv",
     "data/processed/feature_matrix.npy",
+    "data/processed/sample_api_request.json",
+    "data/processed/sample_api_response.json",
     "data/last_updated.txt",
     "models/cbf_model.pkl",
     "models/rl_agent.pkl",
