@@ -9,16 +9,39 @@ export default function WelcomeScreen({ onNext }) {
 
   const handleDetect = () => {
     setStage("locating");
-    // Mock geolocation — pretend to be near Alun-Alun Bandung.
-    // (Real geolocation would use navigator.geolocation, but the demo dataset
-    // is bounded to Bandung so we hardcode a sensible center.)
-    setTimeout(() => {
-      const c = { lat: -6.9215, lng: 107.6071 };
-      setCoord(c);
-      setHomeName("Alun-Alun Bandung (terdeteksi)");
-      setManualId("alun-alun");
-      setStage("found");
-    }, 1800);
+
+    if (!navigator.geolocation) {
+      alert("Browser kamu tidak mendukung geolokasi. Pilih titik manual.");
+      setStage("idle");
+      return;
+    }
+
+    // Real Web Geolocation API. Requires HTTPS in production (Vercel ✓) or
+    // localhost for dev. The browser will show a permission prompt on first use.
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const c = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        };
+        setCoord(c);
+        setHomeName("Lokasi Saya");
+        setManualId(null); // not from HOME_OPTIONS
+        setStage("found");
+      },
+      (error) => {
+        // User denied permission, GPS unavailable, or request timed out.
+        // Fall back to manual selection rather than silently using a default.
+        console.warn("Geolocation error:", error.message);
+        alert("Tidak bisa mengakses lokasi. Pilih titik manual di bawah.");
+        setStage("idle");
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0,
+      }
+    );
   };
 
   const handleManual = (id) => {
@@ -30,11 +53,14 @@ export default function WelcomeScreen({ onNext }) {
   };
 
   const proceed = () => {
-    const opt = HOME_OPTIONS.find((o) => o.id === manualId);
-    onNext({
-      home: { lat: opt.lat, lng: opt.lng },
-      homeName: opt.name,
-    });
+    if (manualId) {
+      // User picked from the HOME_OPTIONS dropdown
+      const opt = HOME_OPTIONS.find((o) => o.id === manualId);
+      onNext({ home: { lat: opt.lat, lng: opt.lng }, homeName: opt.name });
+    } else {
+      // Coordinates came from the browser's Geolocation API
+      onNext({ home: coord, homeName });
+    }
   };
 
   return (
@@ -168,7 +194,16 @@ export default function WelcomeScreen({ onNext }) {
 
           <div className="manual">
             <label>Atau pilih manual</label>
-            <select className="select" value={manualId} onChange={(e) => handleManual(e.target.value)}>
+            <select
+              className="select"
+              value={manualId ?? ""}
+              onChange={(e) => handleManual(e.target.value)}
+            >
+              {manualId === null && (
+                <option value="" disabled>
+                  📍 Lokasi GPS aktif — pilih untuk override
+                </option>
+              )}
               {HOME_OPTIONS.map((o) => (
                 <option key={o.id} value={o.id}>
                   {o.name}
