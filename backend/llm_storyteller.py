@@ -1,16 +1,18 @@
-import os, re, json, logging
-import google.generativeai as genai
+"""Groq LLM narrative generator.
+
+Generates a single-paragraph travel story per the schema {story, vibe}
+that ResultsScreen.jsx renders directly. Falls back to a static
+placeholder if GROQ_API_KEY is missing or the API call fails after the
+retry budget — frontend always has something to render.
+"""
+import os, re, json, time, logging
+import requests
 
 log = logging.getLogger(__name__)
 
-# Konfigurasi Gemini. GROQ_API_KEY dipertahankan sebagai fallback supaya env
-# var lama yang sudah di-set di Railway tetap dipakai sampai user mengganti
-# nama key-nya.
-_api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GROQ_API_KEY")
-if _api_key:
-    genai.configure(api_key=_api_key)
-
-MODEL_NAME = os.environ.get("GEMINI_MODEL", "gemini-1.5-flash")
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+MODEL_NAME = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
+TIMEOUT_S = 12
 
 SYSTEM_PROMPT = """Kamu adalah travel blogger Indonesia bergaya caption Instagram.
 WAJIB:
@@ -40,25 +42,44 @@ def _build_prompt(steps: list) -> str:
 
 
 def generate_story(itinerary: dict, home_name: str = "", categories: list = None) -> dict:
-    if not _api_key:
-        log.warning("GEMINI_API_KEY tidak di-set — pakai fallback story")
+    api_key = os.environ.get("GROQ_API_KEY")
+    if not api_key:
+        log.warning("GROQ_API_KEY tidak di-set — pakai fallback story")
         return FALLBACK
 
     steps = itinerary.get("steps", [])
     if not steps:
         return FALLBACK
 
-    prompt = f"{SYSTEM_PROMPT}\n\n{_build_prompt(steps)}"
+    payload = {
+        "model": MODEL_NAME,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": _build_prompt(steps)},
+        ],
+        "temperature": 0.7,
+        # Groq's OpenAI-compatible API supports response_format on the
+        # Llama-3.1 instruct models — guarantees valid JSON output.
+        "response_format": {"type": "json_object"},
+    }
 
     for attempt, wait in enumerate([1, 3, 8]):
         try:
-            model = genai.GenerativeModel(MODEL_NAME)
-            response = model.generate_content(prompt)
-            raw = response.text.strip()
+            resp = requests.post(
+                GROQ_URL,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=TIMEOUT_S,
+            )
+            resp.raise_for_status()
+            content = resp.json()["choices"][0]["message"]["content"]
 
-            # Bersihkan markdown fence kalau ada
-            raw = re.sub(r"```json|```", "", raw).strip()
-            data = json.loads(raw)
+            # Strip markdown fence on the off-chance the model emits one
+            content = re.sub(r"```json|```", "", content).strip()
+            data = json.loads(content)
 
             # Sanitasi POV — sweep first-person mentions yang masih lolos
             data["story"] = re.sub(
@@ -70,10 +91,8 @@ def generate_story(itinerary: dict, home_name: str = "", categories: list = None
             return data
 
         except Exception as e:  # noqa: BLE001
-            log.warning("Gemini attempt %d failed: %s", attempt + 1, e)
+            log.warning("Groq attempt %d failed: %s", attempt + 1, e)
             if attempt < 2:
-                import time
-
                 time.sleep(wait)
 
     return FALLBACK
