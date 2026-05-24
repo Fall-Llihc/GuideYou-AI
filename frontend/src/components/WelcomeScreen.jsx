@@ -1,17 +1,52 @@
 import React, { useState } from "react";
 import { HOME_OPTIONS } from "../data/homeOptions";
 
+// Map error code dari Geolocation API ke pesan Indonesia yang ramah.
+// Spec: https://developer.mozilla.org/en-US/docs/Web/API/GeolocationPositionError
+function geoErrorMessage(err) {
+  switch (err && err.code) {
+    case 1: // PERMISSION_DENIED
+      return {
+        kind: "warn",
+        text: "Izin lokasi ditolak. Aktifkan izin lokasi di browser, atau pilih titik mulai manual di bawah.",
+      };
+    case 2: // POSITION_UNAVAILABLE
+      return {
+        kind: "warn",
+        text: "Lokasi tidak tersedia (GPS/jaringan kurang akurat). Pilih titik mulai manual di bawah.",
+      };
+    case 3: // TIMEOUT
+      return {
+        kind: "warn",
+        text: "Pencarian lokasi terlalu lama. Coba lagi atau pilih titik mulai manual di bawah.",
+      };
+    default:
+      return {
+        kind: "warn",
+        text: "Terjadi error saat mengambil lokasi. Pilih titik mulai manual di bawah.",
+      };
+  }
+}
+
 export default function WelcomeScreen({ onNext }) {
   const [stage, setStage] = useState("idle"); // idle | locating | found
   const [coord, setCoord] = useState(null);
   const [homeName, setHomeName] = useState("Alun-Alun Bandung");
   const [manualId, setManualId] = useState("alun-alun");
+  const [notice, setNotice] = useState(null); // { kind: "warn"|"info"|"err", text }
+
+  const showNotice = (kind, text) => setNotice({ kind, text });
+  const clearNotice = () => setNotice(null);
 
   const handleDetect = () => {
+    clearNotice();
     setStage("locating");
 
     if (!navigator.geolocation) {
-      alert("Browser kamu tidak mendukung geolokasi. Pilih titik manual.");
+      showNotice(
+        "warn",
+        "Browser kamu tidak mendukung geolokasi. Pilih titik mulai manual di bawah."
+      );
       setStage("idle");
       return;
     }
@@ -30,22 +65,23 @@ export default function WelcomeScreen({ onNext }) {
         setStage("found");
       },
       (error) => {
-        // User denied permission, GPS unavailable, or request timed out.
-        // Fall back to manual selection rather than silently using a default.
         console.warn("Geolocation error:", error.message);
-        alert("Tidak bisa mengakses lokasi. Pilih titik manual di bawah.");
+        const { kind, text } = geoErrorMessage(error);
+        showNotice(kind, text);
         setStage("idle");
       },
       {
         enableHighAccuracy: true,
-        timeout: 10000,
+        timeout: 10_000,
         maximumAge: 0,
       }
     );
   };
 
   const handleManual = (id) => {
+    clearNotice();
     const opt = HOME_OPTIONS.find((o) => o.id === id);
+    if (!opt) return;
     setManualId(id);
     setCoord({ lat: opt.lat, lng: opt.lng });
     setHomeName(opt.name);
@@ -54,11 +90,9 @@ export default function WelcomeScreen({ onNext }) {
 
   const proceed = () => {
     if (manualId) {
-      // User picked from the HOME_OPTIONS dropdown
       const opt = HOME_OPTIONS.find((o) => o.id === manualId);
       onNext({ home: { lat: opt.lat, lng: opt.lng }, homeName: opt.name });
     } else {
-      // Coordinates came from the browser's Geolocation API
       onNext({ home: coord, homeName });
     }
   };
@@ -170,6 +204,24 @@ export default function WelcomeScreen({ onNext }) {
               <span>
                 {coord.lat.toFixed(4)}, {coord.lng.toFixed(4)}
               </span>
+            </div>
+          )}
+
+          {/* Inline notice menggantikan alert() */}
+          {notice && (
+            <div className={`inline-notice notice-${notice.kind}`} role="status">
+              <span className="notice-ico" aria-hidden="true">
+                {notice.kind === "warn" ? "⚠" : notice.kind === "err" ? "✕" : "ℹ"}
+              </span>
+              <span>{notice.text}</span>
+              <button
+                type="button"
+                className="notice-close"
+                onClick={clearNotice}
+                aria-label="Tutup notifikasi"
+              >
+                ×
+              </button>
             </div>
           )}
 
