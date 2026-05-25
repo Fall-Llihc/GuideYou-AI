@@ -3,6 +3,32 @@
     {
       "idx": 1,
       "dest": {
+        "id": "kebun-binatang-bandung",
+        "name": "Kebun Binatang Bandung",
+        "category": "Wisata",
+        "desc": "Kebun binatang klasik di pusat kota dengan koleksi satwa beragam",
+        "ticket": 60000,
+        "duration": 150,
+        "lat": -6.9072,
+        "lng": 107.6078,
+        "rating": 4.1,
+        "tags": [
+          "binatang",
+          "keluarga",
+          "edukatif",
+          "satwa"
+        ],
+        "gmaps_url": "https://www.google.com/maps/search/?api=1&query=Kebun%20Binatang%20Bandung%2C%20Bandung",
+        "stay_detail": "Masuk & peta 10', keliling 90', foto 30', istirahat 20'"
+      },
+      "travelMin": 2,
+      "travelKm": 2.46,
+      "arriveAt": 542,
+      "departAt": 692
+    },
+    {
+      "idx": 2,
+      "dest": {
         "id": "sederhana",
         "name": "Sederhana",
         "category": "Kuliner",
@@ -18,13 +44,13 @@
         "gmaps_url": "https://www.google.com/maps/search/?api=1&query=Sederhana%2C%20Bandung",
         "stay_detail": ""
       },
-      "travelMin": 4,
-      "travelKm": 3.75,
-      "arriveAt": 544,
-      "departAt": 627
+      "travelMin": 3,
+      "travelKm": 2.5,
+      "arriveAt": 695,
+      "departAt": 778
     },
     {
-      "idx": 2,
+      "idx": 3,
       "dest": {
         "id": "tebing-keraton",
         "name": "Tebing Keraton",
@@ -46,73 +72,47 @@
       },
       "travelMin": 21,
       "travelKm": 12.66,
-      "arriveAt": 648,
-      "departAt": 768
-    },
-    {
-      "idx": 3,
-      "dest": {
-        "id": "maribaya-hot-spring",
-        "name": "Maribaya Hot Spring",
-        "category": "Wisata",
-        "desc": "Sumber air panas alam dengan kolam renang dan waterpark di Lembang",
-        "ticket": 50000,
-        "duration": 150,
-        "lat": -6.8167,
-        "lng": 107.65,
-        "rating": 4.2,
-        "tags": [
-          "air-panas",
-          "kolam",
-          "hot-spring",
-          "relaksasi"
-        ],
-        "gmaps_url": "https://www.google.com/maps/search/?api=1&query=Maribaya%20Hot%20Spring%2C%20Bandung",
-        "stay_detail": "Ganti 15', rendam 60', waterpark 45', bilas 30'"
-      },
-      "travelMin": 26,
-      "travelKm": 14.17,
-      "arriveAt": 794,
-      "departAt": 944
+      "arriveAt": 799,
+      "departAt": 919
     },
     {
       "idx": 4,
       "dest": {
-        "id": "bukit-moko",
-        "name": "Bukit Moko",
+        "id": "tangkuban-perahu",
+        "name": "Tangkuban Perahu",
         "category": "Alam",
-        "desc": "Puncak tertinggi di Bandung dengan panorama kota 360 derajat",
-        "ticket": 20000,
-        "duration": 120,
-        "lat": -6.8198,
-        "lng": 107.6898,
+        "desc": "Gunung berapi aktif dengan kawah ratu yang ikonik di utara Bandung",
+        "ticket": 30000,
+        "duration": 135,
+        "lat": -6.7597,
+        "lng": 107.6098,
         "rating": 4.5,
         "tags": [
-          "puncak",
-          "panorama",
-          "sunrise",
-          "instagramable"
+          "gunung",
+          "kawah",
+          "legendaris",
+          "vulkanik"
         ],
-        "gmaps_url": "https://www.google.com/maps/search/?api=1&query=Bukit%20Moko%2C%20Bandung",
-        "stay_detail": "Hiking ke puncak 35', foto 50', turun 35'"
+        "gmaps_url": "https://www.google.com/maps/search/?api=1&query=Tangkuban%20Perahu%2C%20Bandung",
+        "stay_detail": "Parkir & jalan ke kawah 20', foto 45', kawah domas 30', kembali 25', oleh-oleh 15'"
       },
-      "travelMin": 12,
-      "travelKm": 6.29,
-      "arriveAt": 956,
-      "departAt": 1076
+      "travelMin": 75,
+      "travelKm": 27.02,
+      "arriveAt": 994,
+      "departAt": 1129
     }
   ],
-  "totalCost": 219000,
-  "totalKm": 56.69,
-  "totalTime": 561,
-  "returnKm": 19.82,
-  "returnMin": 25,
-  "arriveHome": 1101,
+  "totalCost": 239000,
+  "totalKm": 69.08,
+  "totalTime": 653,
+  "returnKm": 24.43,
+  "returnMin": 64,
+  "arriveHome": 1193,
   "overBudget": false,
-  "spareMin": 159,
+  "spareMin": 67,
   "story": {
     "story": "(akan di-generate oleh Notebook 02 LLM Storyteller)",
     "vibe": "Alam · Kuliner · Wisata Umum"
   },
-  "data_last_updated": "2026-05-24"
+  "data_last_updated": "2026-05-25"
 }
