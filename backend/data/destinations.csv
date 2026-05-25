@@ -1393,8 +1393,7 @@ shoes-and-bags-shopping-street,Shoes and bags shopping street,Wisata,,64000,139,
 several-souvenir-shops,Several souvenir shops,Wisata,,0,131,-6.7611253,107.6179246,3.6,['marketplace'],,https://www.google.com/maps/search/?api=1&query=Several%20souvenir%20shops%2C%20Bandung,osm
 tree-top-adventure-park,Tree Top Adventure Park,Wisata,,65000,139,-6.7821577,107.6499872,4.0,['attraction'],,https://www.google.com/maps/search/?api=1&query=Tree%20Top%20Adventure%20Park%2C%20Bandung,osm
 pasar-baleendah,Pasar Baleendah,Wisata,,0,131,-7.0000343,107.6299812,3.7,['marketplace'],,https://www.google.com/maps/search/?api=1&query=Pasar%20Baleendah%2C%20Bandung,osm
-ujung-berung-town-square,Ujung Berung Town Square,Wisata,,0,134,-6.9151788,107.6964906,4.2,['mall'],,https://www.google.com/maps/search/?api=1&query=Ujung%20Berung%20Town%20Square%2C%20Bandung,osm
-ubertos-mall,Ubertos Mall,Wisata,,0,134,-6.9156817,107.6966507,4.3,['mall'],,https://www.google.com/maps/search/?api=1&query=Ubertos%20Mall%2C%20Bandung,osm
+ujungberung-town-square,Ujungberung Town Square,Wisata,,0,131,-6.9151788,107.6964906,4.0,"['mo-su_08:00-22:00', 'mall', 'yes', 'permissive', 'limited']",,https://www.google.com/maps/search/?api=1&query=Ujungberung%20Town%20Square%2C%20Bandung,osm
 kawah-cibuni-rengganis,kawah Cibuni Rengganis,Wisata,,65000,139,-7.1739727,107.3746848,4.1,['attraction'],,https://www.google.com/maps/search/?api=1&query=kawah%20Cibuni%20Rengganis%2C%20Bandung,osm
 car-boot-sale,Car boot sale,Wisata,evening,0,154,-6.9013053,107.6228683,4.2,"['marketplace', 'evening']",,https://www.google.com/maps/search/?api=1&query=Car%20boot%20sale%2C%20Bandung,osm
 rumah-miring,Rumah Miring,Wisata,,97000,139,-6.8437773,107.6321737,4.2,['attraction'],,https://www.google.com/maps/search/?api=1&query=Rumah%20Miring%2C%20Bandung,osm
