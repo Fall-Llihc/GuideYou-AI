@@ -2089,16 +2089,16 @@ print("✅ RouteOptimizer siap.")
 # =====================================================================
 # SECTION 15 — Inference Pipeline
 # =====================================================================
-md(r"""## §15 — Inference Pipeline + Category Guarantee + Hard Distance Validator
+md(r"""## §15 — Inference Pipeline + Category-First Reservation + Hard Distance Validator
 
 **Apa yang terjadi di section ini:**
 
-Pipeline lengkap end-to-end yang dipanggil saat inference:
+Pipeline lengkap end-to-end yang dipanggil saat inference (revisi: kategori-first):
 
 ```
 user_params → CBF.recommend (top-30, hard max_km) →
-RL.greedy_select (epsilon=0) →
-enforce_category_guarantee (kalau count ≥ len(categories)) →
+reserve_category_representatives (Phase A — 1 destinasi WAJIB per kategori) →
+RL.greedy_select (Phase B — isi sisa slot, candidates exclude yang sudah reserved) →
 hard_distance_validator (final defense) →
 fallback_fill (jika kurang dari count) →
 RouteOptimizer.nearest_neighbor → build_itinerary
@@ -2106,10 +2106,17 @@ RouteOptimizer.nearest_neighbor → build_itinerary
 
 ### Aturan Kunci
 
-1. **Category fairness** (`enforce_category_guarantee`):
-   - Jika user hanya pilih 1 destinasi (`count == 1`) → guarantee di-bypass.
-   - Jika user pilih ≥ 2 kategori dan `count ≥ len(categories)` → setiap kategori WAJIB ada minimal 1.
-   - Jika `count < len(categories)` (mis. 3 kategori tapi count=2) → cover sebanyak mungkin kategori, prioritas yang skor CBF-nya tertinggi per kategori.
+1. **Category-first reservation** (`reserve_category_representatives`) — **PRIORITAS TERTINGGI**:
+   - Jika user hanya pilih 1 destinasi (`count == 1`) atau hanya 1 kategori → bypass.
+   - Jika user pilih ≥ 2 kategori dan `count > 1`:
+       * Phase A reserve **1 destinasi WAJIB per kategori** SEBELUM DRL jalan.
+       * Pemilihan per kategori = top-skor CBF dari `cbf_model.recommend(...)`
+         yang sudah lolos hard filter (max_km + budget).
+       * Kalau `count < len(categories)` (mis. 3 kategori tapi count=2) →
+         pilih `count` kategori dengan kandidat skor tertinggi.
+   - Setelah Phase A jalan, RL hanya mengisi `count - len(reserved)` slot sisa.
+   - Ini *menggantikan* swap pasca-pemilihan yang dulu rapuh (kandidat
+     missing category sering sudah ke-prune dari top-N RL candidates).
 
 2. **Hard distance validator** (`enforce_distance_constraint`):
    - Setelah semua langkah, **buang destinasi yang melanggar `max_km`** dari home, lalu re-fill.
@@ -2141,84 +2148,87 @@ def rl_select_destinations(env, agent, params: dict) -> list:
         agent.epsilon = saved_eps
 
 
-# ── 15.2  Category guarantee ─────────────────────────────────
-def enforce_category_guarantee(selected: list, params: dict) -> list:
-    """Jamin setiap kategori user terwakili minimal 1.
+# ── 15.2  Category-first reservation (UPFRONT) ───────────────
+def reserve_category_representatives(params: dict) -> list:
+    """Phase A: reserve 1 destinasi WAJIB per kategori SEBELUM DRL.
 
-    - count == 1 : bypass (user hanya minta 1 destinasi).
-    - count >= len(categories) : semua kategori HARUS ada.
-    - count < len(categories)  : cover sebanyak mungkin (best effort).
+    Ini menggantikan post-pick swap yang dulu rapuh. Untuk setiap kategori
+    user, ambil top-skor CBF yang lolos hard filter (max_km + budget).
+    Kalau count < len(categories), pilih count kategori dengan kandidat
+    ber-skor tertinggi.
+
+    - count == 1 atau len(categories) <= 1 → bypass (return []).
+    - Else → return list of dict yang siap dipakai sebagai initial selection.
     """
     categories = params.get("categories", [])
     count      = max(1, int(params.get("count", 4)))
 
     if count == 1 or len(categories) <= 1:
-        return selected
+        return []
 
-    n_cover_target = min(count, len(categories))
-    covered = {d["category"] for d in selected}
-    missing = [c for c in categories if c not in covered]
-
-    # Berapa banyak yang bisa di-swap? = min(jumlah missing, count - n_cover_target_already)
     home_lat = params["home"]["lat"]
     home_lng = params["home"]["lng"]
     budget   = params.get("budget")
     has_budget = budget is not None and budget < BandungTravelEnv.UNLIMITED_BUDGET
     max_km   = params.get("maxKm")
 
-    for missing_cat in missing:
-        if len({d["category"] for d in selected}) >= n_cover_target:
-            break  # sudah cukup terwakili
+    # Step 1: kumpulkan top-1 kandidat per kategori (yang lolos hard filter).
+    per_cat_best = {}  # cat -> (row_dict, score)
+    for cat in categories:
         rec = cbf_model.recommend(
-            categories=[missing_cat],
+            categories=[cat],
             budget=budget if has_budget else None,
             max_km=max_km,
             home_lat=home_lat, home_lng=home_lng,
             top_n=15,
         )
-        existing_ids = {d["id"] for d in selected}
-        candidate = None
+        if rec is None or len(rec) == 0:
+            continue
         for _, row in rec.iterrows():
-            if row["id"] in existing_ids:
-                continue
-            # Validasi jarak ulang (defense in depth)
+            # Defense in depth: cek max_km ulang
             if max_km is not None:
                 d_home = haversine_km(home_lat, home_lng, row["lat"], row["lng"])
                 if d_home > max_km:
                     continue
-            # Validasi budget
-            if has_budget:
-                total_now = sum(int(d.get("ticket", 0)) for d in selected)
-                if int(row.get("ticket", 0)) > budget:
-                    continue
-            candidate = row.to_dict()
+            if has_budget and int(row.get("ticket", 0)) > budget:
+                continue
+            per_cat_best[cat] = (row.to_dict(), float(row.get("cbf_score", 0.0)))
             break
 
-        if not candidate:
+    # Step 2: kalau count < len(categories), prioritaskan kategori dengan
+    # kandidat ber-skor tertinggi. Else, ambil semua.
+    n_reserve = min(count, len(categories))
+    sorted_cats = sorted(per_cat_best.items(), key=lambda kv: -kv[1][1])[:n_reserve]
+
+    reserved = []
+    used_ids = set()
+    spent    = 0
+    for cat, (row, _score) in sorted_cats:
+        if row["id"] in used_ids:
             continue
-
-        # Pilih target swap: kategori paling over-represented (rating terendah)
-        cat_counts = Counter(d["category"] for d in selected)
-        over_cats  = [c for c in cat_counts
-                      if c != missing_cat and cat_counts[c] > 1]
-        if over_cats:
-            over_cat = max(over_cats, key=lambda c: cat_counts[c])
-            swap_pool = [d for d in selected if d["category"] == over_cat]
-        else:
-            swap_pool = [d for d in selected if d["category"] != missing_cat]
-
-        if not swap_pool:
+        if has_budget and spent + int(row.get("ticket", 0)) > budget:
             continue
-        swap_target = min(swap_pool, key=lambda d: float(d.get("rating", 0)))
-        idx = next(i for i, d in enumerate(selected) if d["id"] == swap_target["id"])
-        selected[idx] = candidate
-        print(f"  🔄 Swap: '{swap_target['name']}' ({swap_target['category']}) "
-              f"→ '{candidate['name']}' ({missing_cat})")
+        reserved.append(row)
+        used_ids.add(row["id"])
+        spent += int(row.get("ticket", 0))
+        print(f"  📍 Reserve [{cat}]: {row['name']} (score={_score:.3f})")
 
+    missing = [c for c in categories if c not in {r["category"] for r in reserved}]
+    if missing and len(reserved) < n_reserve:
+        print(f"  ⚠️  Kategori tanpa kandidat valid: {missing}")
+    return reserved
+
+
+# ── 15.3  Category guarantee (DEPRECATED — kept as no-op shim) ───
+def enforce_category_guarantee(selected: list, params: dict) -> list:
+    """DEPRECATED — kategori guarantee sekarang diberlakukan di awal lewat
+    `reserve_category_representatives`. Fungsi ini di-keep sebagai no-op
+    supaya pipeline lama tetap kompatibel.
+    """
     return selected
 
 
-# ── 15.3  Hard distance validator (final defense) ────────────
+# ── 15.4  Hard distance validator (final defense) ────────────
 def enforce_distance_constraint(selected: list, params: dict) -> list:
     """Buang destinasi yang melanggar max_km. Final guard."""
     max_km = params.get("maxKm")
@@ -2236,7 +2246,7 @@ def enforce_distance_constraint(selected: list, params: dict) -> list:
     return kept
 
 
-# ── 15.4  Fallback fill ──────────────────────────────────────
+# ── 15.5  Fallback fill ──────────────────────────────────────
 def smart_fallback_fill(selected: list, params: dict, target: int) -> list:
     if len(selected) >= target:
         return selected
@@ -2279,29 +2289,43 @@ def smart_fallback_fill(selected: list, params: dict, target: int) -> list:
     return selected
 
 
-# ── 15.5  Pipeline lengkap ───────────────────────────────────
+# ── 15.6  Pipeline lengkap ───────────────────────────────────
 def full_pipeline(params: dict) -> dict:
     target = max(1, int(params.get("count", 4)))
+
+    # PHASE A — Kategori-first reservation (jalan duluan, bukan post-hoc swap).
+    reserved = reserve_category_representatives(params)
+    print(f"  🎯 Phase A reserved {len(reserved)} kategori representative(s).")
+
+    # PHASE B — RL hanya isi sisa slot.
+    remaining_target = max(0, target - len(reserved))
     rl_params = {
         "categories": params.get("categories", []),
         "budget":     params.get("budget"),
         "max_km":     params.get("maxKm"),
-        "count":      target,
+        "count":      max(1, remaining_target),  # RL minimal 1; akan dipotong di filter
         "startMin":   params.get("startMin", 9 * 60),
         "endMin":     params.get("endMin",   21 * 60),
         "home_lat":   params["home"]["lat"],
         "home_lng":   params["home"]["lng"],
     }
 
-    # 1. RL greedy
-    selected = rl_select_destinations(env, rl_agent, rl_params)
-    # 2. Category guarantee
+    if remaining_target > 0:
+        rl_picked = rl_select_destinations(env, rl_agent, rl_params)
+        # Defense: dedup terhadap kandidat yang sudah di-reserve di Phase A
+        reserved_ids = {d["id"] for d in reserved}
+        rl_picked = [d for d in rl_picked if d["id"] not in reserved_ids][:remaining_target]
+        selected = reserved + rl_picked
+    else:
+        selected = list(reserved)
+
+    # 1.5 No-op category guarantee (now handled in Phase A)
     selected = enforce_category_guarantee(selected, params)
-    # 3. Hard distance validator
+    # 2. Hard distance validator
     selected = enforce_distance_constraint(selected, params)
-    # 4. Fallback (top-up jika kurang)
+    # 3. Fallback (top-up jika kurang) — tetap respect categories preference
     selected = smart_fallback_fill(selected, params, target)
-    # 5. Final distance check sekali lagi (jika fallback nakal)
+    # 4. Final distance check sekali lagi (jika fallback nakal)
     selected = enforce_distance_constraint(selected, params)
 
     if not selected:
@@ -2330,7 +2354,7 @@ def full_pipeline(params: dict) -> dict:
     return result
 
 
-# ── 15.6  Smoke tests ────────────────────────────────────────
+# ── 15.7  Smoke tests ────────────────────────────────────────
 def _summarize(label, params, res):
     print(f"\n{'='*64}\n{label}\n{'='*64}")
     print(f"Destinasi terpilih: {len(res['steps'])}/{params.get('count')}")
