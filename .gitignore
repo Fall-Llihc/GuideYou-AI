@@ -46,3 +46,4 @@ notebooks/data/processed/*.png
 # ─── Allow these to be tracked ───────────────────────────
 !models/.gitkeep
 !backend/data/.gitkeep
+.artifact-backup/

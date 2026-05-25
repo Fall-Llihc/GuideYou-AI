@@ -5,12 +5,13 @@
   },
   "homeName": "Alun-Alun Bandung",
   "count": 4,
-  "maxKm": null,
+  "maxKm": 25,
   "startMin": 540,
   "endMin": 1260,
-  "budget": 500000,
+  "budget": 400000,
   "categories": [
     "Alam",
-    "Kuliner"
+    "Kuliner",
+    "Wisata"
   ]
 }

@@ -93,6 +93,18 @@ export default function FormScreen({ homeData, onBack, onSubmit }) {
     return null;
   }, [count, categories.length]);
 
+  // Tip kalau max_km terlalu ketat (mungkin bikin hasil kosong)
+  const tightDistanceTip = useMemo(() => {
+    if (!maxKmOn) return null;
+    if (maxKm < 5) {
+      return `Radius ${maxKm} km dari home sangat ketat untuk Bandung. Kemungkinan besar tidak ada destinasi wisata yang masuk — coba 10 km ke atas. Sistem akan memberi tahu kalau memang tidak ada yang cocok.`;
+    }
+    if (maxKm < 10) {
+      return `Radius ${maxKm} km cukup ketat — destinasi yang muncul akan terbatas di sekitar pusat kota. Naikkan ke 20-30 km kalau mau cakupan lebih luas (Lembang, Ciwidey).`;
+    }
+    return null;
+  }, [maxKmOn, maxKm]);
+
   const submit = () => {
     const errs = validateForm({
       count, startMin, endMin, budget, budgetOn, maxKm, maxKmOn, categories,
@@ -255,6 +267,11 @@ export default function FormScreen({ homeData, onBack, onSubmit }) {
                 {maxKmOn ? `Setiap destinasi ≤ ${maxKm} km dari home` : "—"}
               </div>
             </div>
+            {tightDistanceTip && (
+              <div className="form-info" style={{ marginTop: 8 }}>
+                ℹ {tightDistanceTip}
+              </div>
+            )}
           </div>
 
           {/* Time start/end */}

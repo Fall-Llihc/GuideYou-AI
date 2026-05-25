@@ -165,7 +165,15 @@ def plan(req: PlanRequest):
     # LLM narrative is best-effort: never fail the whole response if Groq
     # is down, missing API key, or rate-limited. The fallback narrator returns
     # a generic story so the frontend always has something to render.
-    story = generate_story(itinerary, home_name=req.homeName, categories=cleaned_categories)
+    # Skip LLM if no destinations were found (empty itinerary) — narrative
+    # would be misleading.
+    if itinerary.get("steps"):
+        story = generate_story(itinerary, home_name=req.homeName, categories=cleaned_categories)
+    else:
+        story = {
+            "story": "",
+            "vibe": "",
+        }
 
     return {
         **itinerary,
