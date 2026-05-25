@@ -3,109 +3,116 @@
     {
       "idx": 1,
       "dest": {
-        "id": "osm-node-1346794434",
-        "name": "Mambo FoodCourt",
+        "id": "sederhana",
+        "name": "Sederhana",
         "category": "Kuliner",
-        "desc": "Destinasi wisata Kuliner di Bandung",
-        "ticket": 32500,
-        "duration": 95,
-        "lat": -6.8941921,
-        "lng": 107.6150603,
-        "rating": 4.37,
-        "tags": [],
-        "gmaps_url": "https://www.google.com/maps/search/?api=1&query=Mambo%20FoodCourt%2C%20Bandung",
+        "desc": "",
+        "ticket": 134000,
+        "duration": 83,
+        "lat": -6.91157,
+        "lng": 107.627266,
+        "rating": 4.2,
+        "tags": [
+          "restaurant"
+        ],
+        "gmaps_url": "https://www.google.com/maps/search/?api=1&query=Sederhana%2C%20Bandung",
         "stay_detail": ""
       },
-      "travelMin": 7,
-      "travelKm": 5.3,
-      "arriveAt": 547,
-      "departAt": 642
+      "travelMin": 4,
+      "travelKm": 3.75,
+      "arriveAt": 544,
+      "departAt": 627
     },
     {
       "idx": 2,
       "dest": {
-        "id": "osm-node-1341941777",
-        "name": "Pizza Place",
-        "category": "Kuliner",
-        "desc": "Destinasi wisata Kuliner di Bandung",
-        "ticket": 32500,
-        "duration": 95,
-        "lat": -6.8925163,
-        "lng": 107.6127554,
-        "rating": 4.37,
-        "tags": [],
-        "gmaps_url": "https://www.google.com/maps/search/?api=1&query=Pizza%20Place%2C%20Bandung",
-        "stay_detail": ""
+        "id": "tebing-keraton",
+        "name": "Tebing Keraton",
+        "category": "Alam",
+        "desc": "Tebing dengan view hutan pinus Dago Pakar, populer untuk sunrise",
+        "ticket": 15000,
+        "duration": 120,
+        "lat": -6.8359,
+        "lng": 107.663,
+        "rating": 4.5,
+        "tags": [
+          "sunrise",
+          "hiking",
+          "tebing",
+          "pinus"
+        ],
+        "gmaps_url": "https://www.google.com/maps/search/?api=1&query=Tebing%20Keraton%2C%20Bandung",
+        "stay_detail": "Hiking ke tebing 30', menikmati view & foto 45', santai 25', turun 20'"
       },
-      "travelMin": 1,
-      "travelKm": 0.64,
-      "arriveAt": 643,
-      "departAt": 738
+      "travelMin": 21,
+      "travelKm": 12.66,
+      "arriveAt": 648,
+      "departAt": 768
     },
     {
       "idx": 3,
       "dest": {
-        "id": "osm-node-1342896154",
-        "name": "Dago Panineungan",
-        "category": "Kuliner",
-        "desc": "Destinasi wisata Kuliner di Bandung",
-        "ticket": 32500,
-        "duration": 95,
-        "lat": -6.8872957,
-        "lng": 107.6138988,
-        "rating": 4.37,
-        "tags": [],
-        "gmaps_url": "https://www.google.com/maps/search/?api=1&query=Dago%20Panineungan%2C%20Bandung",
-        "stay_detail": ""
+        "id": "maribaya-hot-spring",
+        "name": "Maribaya Hot Spring",
+        "category": "Wisata",
+        "desc": "Sumber air panas alam dengan kolam renang dan waterpark di Lembang",
+        "ticket": 50000,
+        "duration": 150,
+        "lat": -6.8167,
+        "lng": 107.65,
+        "rating": 4.2,
+        "tags": [
+          "air-panas",
+          "kolam",
+          "hot-spring",
+          "relaksasi"
+        ],
+        "gmaps_url": "https://www.google.com/maps/search/?api=1&query=Maribaya%20Hot%20Spring%2C%20Bandung",
+        "stay_detail": "Ganti 15', rendam 60', waterpark 45', bilas 30'"
       },
-      "travelMin": 2,
-      "travelKm": 1.23,
-      "arriveAt": 740,
-      "departAt": 835
+      "travelMin": 26,
+      "travelKm": 14.17,
+      "arriveAt": 794,
+      "departAt": 944
     },
     {
       "idx": 4,
       "dest": {
-        "id": "osm-node-1070157126",
-        "name": "Gunung Buluh",
+        "id": "bukit-moko",
+        "name": "Bukit Moko",
         "category": "Alam",
-        "desc": "Destinasi wisata Alam di Bandung",
-        "ticket": 17000,
+        "desc": "Puncak tertinggi di Bandung dengan panorama kota 360 derajat",
+        "ticket": 20000,
         "duration": 120,
-        "lat": -6.7992705,
-        "lng": 107.6697873,
-        "rating": 4.43076923076923,
-        "tags": [],
-        "gmaps_url": "https://www.google.com/maps/search/?api=1&query=Gunung%20Buluh%2C%20Bandung",
-        "stay_detail": ""
+        "lat": -6.8198,
+        "lng": 107.6898,
+        "rating": 4.5,
+        "tags": [
+          "puncak",
+          "panorama",
+          "sunrise",
+          "instagramable"
+        ],
+        "gmaps_url": "https://www.google.com/maps/search/?api=1&query=Bukit%20Moko%2C%20Bandung",
+        "stay_detail": "Hiking ke puncak 35', foto 50', turun 35'"
       },
-      "travelMin": 26,
-      "travelKm": 14.71,
-      "arriveAt": 861,
-      "departAt": 981
+      "travelMin": 12,
+      "travelKm": 6.29,
+      "arriveAt": 956,
+      "departAt": 1076
     }
   ],
-  "totalCost": 114500,
-  "totalKm": 41.95,
-  "totalTime": 472,
-  "returnKm": 20.07,
-  "returnMin": 31,
-  "arriveHome": 1012,
+  "totalCost": 219000,
+  "totalKm": 56.69,
+  "totalTime": 561,
+  "returnKm": 19.82,
+  "returnMin": 25,
+  "arriveHome": 1101,
   "overBudget": false,
-  "spareMin": 248,
+  "spareMin": 159,
   "story": {
-    "intro": "(akan di-generate oleh Notebook 02 / Groq API)",
-    "highlights": [
-      "(per destinasi)",
-      "(per destinasi)",
-      "(per destinasi)",
-      "(per destinasi)"
-    ],
-    "tips": [
-      "(2-4 tips praktis)"
-    ],
-    "closing": "(1 kalimat penutup)",
-    "vibe": "Alam & Kuliner"
+    "story": "(akan di-generate oleh Notebook 02 LLM Storyteller)",
+    "vibe": "Alam · Kuliner · Wisata Umum"
   },
-  "data_last_updated": "2026-05-23"
+  "data_last_updated": "2026-05-24"
 }

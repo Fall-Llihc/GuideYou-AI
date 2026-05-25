@@ -41,16 +41,18 @@ Membangun antarmuka pengguna yang memungkinkan user memasukkan preferensi dan me
 WelcomeScreen → FormScreen → LoadingScreen → ResultsScreen
 ```
 
-**WelcomeScreen** — Pengguna memilih titik keberangkatan. Tersedia 6 pilihan lokasi preset (Alun-Alun, Stasiun Bandung, Dago, Lembang, Pasteur, Buah Batu) dan tombol deteksi GPS menggunakan Web Geolocation API.
+**WelcomeScreen** — Pengguna memilih titik keberangkatan. Tersedia 5 pilihan lokasi preset (Alun-Alun Bandung, Stasiun Bandung, Pasar Lembang, Dago, Gedung Sate) — sinkron dengan `HOME_OPTIONS` di notebook §2.6 sehingga distribusi reward RL match dengan production. Tombol deteksi GPS pakai Web Geolocation API. Error geolokasi (izin ditolak / GPS gagal / timeout) sekarang ditampilkan inline yang ramah, bukan `alert()`.
 
 **FormScreen** — Pengguna mengisi parameter perjalanan:
 - Jumlah destinasi (1–8)
 - Budget total (opsional)
-- Jarak maksimum antar tempat (opsional)
+- Jarak maksimum dari home (opsional, hard-gate di backend)
 - Jam mulai dan selesai perjalanan
-- Kategori favorit: Alam, Kuliner, Budaya, Wisata, Belanja
+- Kategori favorit: **Alam · Kuliner · Wisata** (3 kategori, sesuai notebook v3)
 
-**LoadingScreen** — Animasi visual 4 agen AI bekerja (Filter Agent → Recommendation Agent → Route Optimizer → Narrative Agent). Request ke backend dikirim secara paralel saat loading screen muncul, bukan menunggu animasi selesai.
+Validasi dilakukan inline sebelum kirim — pesan error tampil sebagai daftar di atas tombol submit, bukan satu-satu `alert()`.
+
+**LoadingScreen** — Animasi 4 agen AI bekerja paralel dengan request backend. Jika request belum selesai dalam 12 detik, muncul hint cold-start ("server free-tier kadang butuh warm-up"). Saat error, screen ini menampilkan **error UI yang aksi-able**: ikon + judul + pesan + saran konkret + tombol *Coba lagi* / *Kembali ke form* yang dipilih sesuai jenis error (network / timeout / validation / rate-limit / server / unknown).
 
 **ResultsScreen** — Menampilkan hasil lengkap:
 - Summary cards: jumlah destinasi, total biaya, total jarak, total waktu
@@ -168,23 +170,28 @@ Memilih destinasi wisata terbaik yang sesuai preferensi pengguna, lalu menyusunn
 **Seed data manual:**
 - 50 destinasi ikonik Bandung dikurasi manual dengan data lengkap: nama, kategori, koordinat, harga tiket, durasi kunjungan, rating, tags, stay_detail (jadwal aktivitas detail di dalam destinasi)
 
-**Hasil akhir:** `destinations.csv` — 316 destinasi, 13 kolom:
+**Hasil akhir:** `destinations.csv` — kolom:
 ```
 id, name, category, desc, ticket, duration, lat, lng,
 rating, tags, stay_detail, source, gmaps_url
 ```
-Distribusi kategori: Alam (73), Kuliner (67), Belanja (62), Budaya (57), Wisata (57)
+Distribusi kategori (notebook v3, 3 kategori saja):
+- **Alam** — gunung, curug, kebun teh, danau, tebing, taman alam
+- **Kuliner** — restoran, kafe, warung, food court, kaki lima
+- **Wisata** — theme park, water park, zoo, agro-edukasi, hot spring, mall, factory outlet, pasar tradisional
+
+Kategori "Belanja" lama digabung ke "Wisata" (mall & FO secara natural adalah destinasi wisata di Bandung). Kategori "Budaya" dihapus penuh karena pada OSM banyak ter-tag dengan POI non-wisata (masjid, sekolah, kantor).
 
 #### B. Feature Engineering
-Setiap destinasi direpresentasikan sebagai vektor 30 dimensi:
+Setiap destinasi direpresentasikan sebagai vektor fitur:
 
-| Kelompok Fitur | Dimensi | Keterangan |
-|---|---|---|
-| One-hot kategori | 5 | Alam, Kuliner, Budaya, Wisata, Belanja |
-| Numerik ternormalisasi | 5 | ticket_log, rating, duration, lat, lng |
-| TF-IDF tags | 20 | Keyword karakter destinasi: fotogenik, sunrise, dll |
+| Kelompok Fitur | Dimensi | Bobot | Keterangan |
+|---|---|---|---|
+| One-hot kategori | 3 | ×2.0 | Alam, Kuliner, Wisata |
+| Numerik ternormalisasi | 5 | ×1.0 | ticket_log, rating, duration, lat, lng |
+| TF-IDF tags | s.d. 20 | ×0.5 | Keyword karakter destinasi: fotogenik, sunrise, dll |
 
-Normalisasi menggunakan MinMaxScaler. Tags diparsing dari string Python list dengan `ast.literal_eval()`.
+Kategori di-bobot ×2.0 supaya similarity antar-kategori-berbeda lebih rendah — penting untuk variety guarantee. Normalisasi numerik pakai MinMaxScaler. Tags diparsing dari string Python list dengan `ast.literal_eval()`.
 
 #### C. Content-Based Filtering (CBF)
 - Cosine similarity dihitung antar semua pasangan destinasi menggunakan vektor 30 dimensi
@@ -205,16 +212,20 @@ Agent dilatih di simulated environment karena tidak ada data interaksi user nyat
 
 **Action:** memilih satu destinasi dari kandidat CBF
 
-**Reward function:**
+**Reward function (notebook v3 — 4 dimensi yang adil):**
 ```
-reward = 0.5 × rating_score
-       + 0.2 × variety_bonus (bonus jika kategori baru)
-       + 0.3 × budget_efficiency
-       - penalty_overtime
-       - penalty_overbudget
+reward = 0.30 × rating_score      ((rating-3)/2 clipped [0,1])
+       + 0.25 × variety_bonus     (1.0 jika kategori belum dipilih)
+       + 0.25 × distance_score    (1 - dist_home/max_km clipped [0,1])
+       + 0.20 × budget_score      (sisa_budget / total_budget)
+       - 2.0  × overmaxKm_penalty (defense in depth)
+       - 1.0  × overtime_penalty
+       - 0.5  × overbudget_penalty
 ```
 
-Training: 3.000 episode dengan epsilon-greedy (ε decay dari 1.0 → 0.05)
+`max_km` di-enforce di **4 lapis** secara HARD: filter kandidat CBF → `env.get_valid_actions` → `enforce_distance_constraint` (post-RL) → fallback fill juga cek max_km. Tidak pernah di-relax.
+
+Training: 3.000 episode dengan epsilon-greedy (ε decay dari 1.0 → 0.05).
 
 Saat inference: epsilon=0 (greedy), fallback ke nearest-neighbor jika state tidak ada di Q-table (Q-table sparse: 149 states dari 3.000 episode)
 
@@ -228,18 +239,54 @@ Setelah destinasi dipilih, rute disusun dengan heuristik nearest-neighbor:
 #### F. Model yang Disimpan
 ```
 backend/models/
-├── cbf_model.pkl       # 872 KB — similarity_matrix (316×316), feature_matrix (316×30), df_index
-├── rl_agent.pkl        # 117 KB — q_table (149 states), epsilon, training_history
-├── label_encoders.pkl  # 3.5 KB — MinMaxScaler, TfidfVectorizer, metadata kolom
-└── scaler.pkl          # 682 B  — MinMaxScaler
+├── cbf_model.pkl       # similarity_matrix (N×N), feature_matrix (N×~28), df_index
+├── rl_agent.pkl        # q_table, epsilon, training_history, epsilon_history
+├── label_encoders.pkl  # MinMaxScaler, TfidfVectorizer, metadata kolom
+└── scaler.pkl          # MinMaxScaler (numerik 5-dim)
 ```
 
-Model dilatih dengan `scikit-learn==1.6.1` — versi harus sama persis di backend production.
+Ukuran tergantung jumlah destinasi hasil crawling — biasanya cbf_model ~600KB-1MB, rl_agent ~100KB. Model dilatih dengan `scikit-learn==1.6.1` — versi harus sama persis di backend production.
 
 ### File Kunci
 ```
-notebooks/rec-engine.ipynb     # Crawling + feature engineering + CBF + RL + evaluasi
+notebooks/rec-engine (4).ipynb # Crawling + feature engineering + CBF + RL + evaluasi (v3)
+notebooks/_build_notebook.py   # Generator script untuk regenerate notebook
 backend/recommender.py         # CBF + RL inference engine untuk serving
+scripts/apply-kaggle-artifacts.sh  # Pasang artefak Kaggle ke backend/
+```
+
+---
+
+## Workflow Update Model (Re-train di Kaggle)
+
+Setelah notebook di-train ulang di Kaggle dan artefak hasil training di-download sebagai `bandung-travel-artifacts.zip`, gunakan script berikut untuk memasang ke backend:
+
+```bash
+# Dari root repo
+bash scripts/apply-kaggle-artifacts.sh path/to/bandung-travel-artifacts.zip
+
+# Atau auto-detect (zip diletakkan di repo root / notebooks/ / ~/Downloads/)
+bash scripts/apply-kaggle-artifacts.sh
+```
+
+Script akan:
+1. Verifikasi semua file kritis ada di zip (destinations.csv + 4 .pkl)
+2. Backup folder `backend/data` & `backend/models` lama ke `.artifact-backup/<timestamp>/`
+3. Salin `destinations.csv`, `last_updated.txt`, & `*.pkl` ke `backend/`
+4. Salin `sample_request.json` & `sample_response.json` ke `docs/api/`
+5. Sanity-check kategori (harus subset dari `{Alam, Kuliner, Wisata}`) dan blacklist (tidak ada nama yang lolos filter masjid/sekolah/showroom/dll)
+
+Kalau sanity-check gagal, script keluar dengan exit code 1 — re-train notebook dengan blacklist terbaru sebelum redeploy.
+
+**Branch flow yang direkomendasikan:**
+```
+1. Train notebook di Kaggle  → download bandung-travel-artifacts.zip
+2. git checkout -b chore/refresh-model
+3. bash scripts/apply-kaggle-artifacts.sh ~/Downloads/bandung-travel-artifacts.zip
+4. git add backend/data/destinations.csv backend/data/last_updated.txt
+   git add backend/models/*.pkl docs/api/*.json
+5. git commit -m "chore: refresh model dari training Kaggle YYYY-MM-DD"
+6. git push + buat PR ke main → merge → Railway auto-deploy
 ```
 
 ---
@@ -321,7 +368,8 @@ Solusi: update `ResultsScreen.jsx`, ganti loop render lama dengan satu `<p>{stor
 
 ```
 ✅ Backend Railway — online
-   /api/health → model_loaded:true, cbf_loaded:true, sim_matrix:[316,316]
+   /api/health → model_loaded:true, cbf_loaded:true,
+                 sim_matrix:[N,N] (N tergantung dataset hasil crawling)
 
 ✅ Frontend Vercel — online
    Aplikasi berjalan, itinerary dapat di-generate end-to-end
@@ -371,11 +419,11 @@ Solusi: update `ResultsScreen.jsx`, ganti loop render lama dengan satu `<p>{stor
 |---|---|---|
 | Frontend | React 18, CSS Variables | Di-host di Vercel (free) |
 | Backend API | FastAPI, Python 3.11, Uvicorn | Di-host di Railway (free trial) |
-| CBF Model | scikit-learn 1.6.1, cosine similarity | Di-train di Kaggle, ~872 KB |
-| RL Model | Q-Learning custom Python | Di-train di Kaggle, ~117 KB |
+| CBF Model | scikit-learn 1.6.1, cosine similarity | Di-train di Kaggle |
+| RL Model | Q-Learning custom Python | Di-train di Kaggle |
 | Route Optimizer | Nearest-Neighbor TSP | Bagian dari backend, no library |
 | LLM Storyteller | Groq API, llama-3.1-8b-instant | Free 14.400 req/hari |
-| Dataset | 316 destinasi wisata Bandung | OpenStreetMap + kurasi manual |
+| Dataset | Destinasi wisata Bandung (3 kategori) | OpenStreetMap + 24 seed manual |
 | Version Control | Git + GitHub | Auto-deploy ke Railway + Vercel |
 
 ---

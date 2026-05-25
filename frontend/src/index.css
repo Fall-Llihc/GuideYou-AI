@@ -1076,3 +1076,278 @@ input[type=range]::-moz-range-thumb {
   .resume-grid { grid-template-columns: 1fr; }
   .results-header h2 { font-size: 34px; }
 }
+
+
+
+/* ─────────────────────────────────────────────────────────────
+   Error / empty-state / inline-notice / form errors
+   Ditambahkan untuk error handling user-friendly di v3.
+   ───────────────────────────────────────────────────────────── */
+
+/* Loader card — varian error */
+.error-card {
+  text-align: center;
+  padding: 40px 36px;
+  border-color: var(--line);
+}
+.error-card .error-icon {
+  font-size: 44px;
+  line-height: 1;
+  margin-bottom: 18px;
+  filter: drop-shadow(0 6px 24px rgba(232,160,74,.35));
+}
+.error-card .error-title {
+  font-family: var(--font-display);
+  font-size: 24px;
+  font-weight: 500;
+  margin: 0 0 12px;
+  letter-spacing: -0.01em;
+}
+.error-card .error-msg {
+  color: var(--ink-mute);
+  font-size: 14px;
+  line-height: 1.6;
+  margin: 0 0 18px;
+  white-space: pre-wrap; /* render multi-line dari pydantic detail */
+}
+.error-card .error-hint {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  text-align: left;
+  background: var(--bg-3);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+  font-size: 13px;
+  color: var(--ink-mute);
+  margin-bottom: 16px;
+}
+.error-card .error-hint-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--saffron);
+  white-space: nowrap;
+  padding-top: 1px;
+}
+.error-card .error-meta {
+  font-size: 11px;
+  color: var(--ink-dim);
+  margin-bottom: 18px;
+  letter-spacing: 0.04em;
+}
+.error-card .error-actions {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+/* Tone variants */
+.error-warn  .error-icon { color: var(--saffron); }
+.error-info  .error-icon { color: var(--jade); }
+.error-danger .error-icon { color: var(--coral); }
+.error-warn  { border-top: 2px solid var(--saffron); }
+.error-info  { border-top: 2px solid var(--jade); }
+.error-danger { border-top: 2px solid var(--coral); }
+
+/* Cold-start hint di dalam loader */
+.cold-hint {
+  margin: 18px auto 0;
+  padding: 10px 14px;
+  background: rgba(232,160,74,.08);
+  border: 1px solid rgba(232,160,74,.25);
+  border-radius: var(--radius-sm);
+  color: var(--saffron);
+  font-size: 13px;
+  max-width: 460px;
+  line-height: 1.5;
+}
+
+/* Inline notice (Welcome / Form) — pengganti alert() */
+.inline-notice {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  line-height: 1.5;
+  margin: 14px 0 0;
+  border: 1px solid var(--line-soft);
+  background: var(--bg-3);
+}
+.inline-notice .notice-ico {
+  font-size: 14px;
+  line-height: 1.4;
+  flex-shrink: 0;
+}
+.inline-notice .notice-close {
+  margin-left: auto;
+  background: none;
+  border: 0;
+  color: var(--ink-dim);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+  transition: color .15s ease;
+}
+.inline-notice .notice-close:hover { color: var(--ink); }
+
+.inline-notice.notice-warn {
+  border-color: rgba(232,160,74,.35);
+  background: rgba(232,160,74,.06);
+  color: var(--saffron);
+}
+.inline-notice.notice-info {
+  border-color: rgba(95,176,155,.35);
+  background: rgba(95,176,155,.06);
+  color: var(--jade);
+}
+.inline-notice.notice-err {
+  border-color: rgba(217,104,78,.4);
+  background: rgba(217,104,78,.07);
+  color: var(--coral);
+}
+
+/* Form-level errors (di FormScreen sebelum tombol submit) */
+.form-errors {
+  margin-top: 24px;
+  padding: 14px 16px;
+  border: 1px solid rgba(217,104,78,.45);
+  background: rgba(217,104,78,.07);
+  border-radius: var(--radius);
+  color: var(--coral);
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+.form-errors-head {
+  font-weight: 600;
+  margin-bottom: 6px;
+}
+.form-errors ul {
+  margin: 0;
+  padding-left: 20px;
+}
+.form-errors li + li { margin-top: 4px; }
+
+/* Soft info notice (mis. category coverage warning) */
+.form-info {
+  padding: 8px 12px;
+  border: 1px solid rgba(95,176,155,.35);
+  background: rgba(95,176,155,.06);
+  color: var(--jade);
+  border-radius: var(--radius-sm);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* ─── Empty state (steps[] kosong di ResultsScreen) ───────── */
+.empty-state {
+  text-align: center;
+  max-width: 620px;
+  margin: 80px auto;
+  padding: 0 24px;
+}
+.empty-state .empty-icon {
+  font-size: 56px;
+  margin-bottom: 18px;
+  filter: drop-shadow(0 8px 32px rgba(232,160,74,.3));
+}
+.empty-state h2 {
+  font-family: var(--font-display);
+  font-size: 32px;
+  font-weight: 500;
+  margin: 0 0 14px;
+  letter-spacing: -0.01em;
+}
+.empty-state > p {
+  color: var(--ink-mute);
+  font-size: 14.5px;
+  line-height: 1.65;
+  margin: 0 0 22px;
+}
+.empty-tips {
+  text-align: left;
+  background: var(--bg-2);
+  border: 1px solid var(--line-soft);
+  border-radius: var(--radius);
+  padding: 18px 22px 18px 40px;
+  margin: 0 auto;
+  max-width: 560px;
+  color: var(--ink-mute);
+  font-size: 13.5px;
+  line-height: 1.7;
+}
+.empty-tips li + li { margin-top: 6px; }
+.empty-tips strong { color: var(--ink); font-weight: 500; }
+
+
+
+/* ─────────────────────────────────────────────────────────────
+   Result-level notices (info banners di ResultsScreen)
+   Berbeda dengan .form-errors / .error-card — ini bukan error
+   melainkan info kontekstual dari backend tentang constraint
+   yang mempengaruhi hasil.
+   ───────────────────────────────────────────────────────────── */
+.result-notices {
+  margin: 0 0 28px;
+  padding: 14px 18px;
+  border-radius: var(--radius);
+  border: 1px solid rgba(95,176,155,.3);
+  background: rgba(95,176,155,.06);
+  color: var(--ink);
+}
+.result-notices .rn-head {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--jade);
+  margin-bottom: 8px;
+}
+.result-notices .rn-item {
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--ink-mute);
+}
+.result-notices .rn-item + .rn-item {
+  margin-top: 4px;
+}
+.result-notices.result-notices-warn {
+  border-color: rgba(217,104,78,.4);
+  background: rgba(217,104,78,.07);
+}
+.result-notices.result-notices-warn .rn-head {
+  color: var(--coral);
+}
+
+/* Empty-state notices (specific reasons from backend) */
+.empty-notices {
+  text-align: left;
+  background: var(--bg-2);
+  border: 1px solid rgba(232,160,74,.35);
+  border-radius: var(--radius-sm);
+  padding: 14px 18px;
+  margin: 0 auto 22px;
+  max-width: 560px;
+  font-size: 13.5px;
+  line-height: 1.6;
+  color: var(--ink-mute);
+}
+.empty-notices .empty-notice-row {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+}
+.empty-notices .empty-notice-row + .empty-notice-row {
+  margin-top: 8px;
+}
+.empty-notices .bullet {
+  color: var(--saffron);
+  flex-shrink: 0;
+  font-weight: bold;
+}

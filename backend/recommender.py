@@ -320,60 +320,151 @@ class Recommender:
         budget: Optional[int],
         categories: List[str],
     ) -> Dict[str, Any]:
-        # 1. Filter by category preference (soft — fallback to all if too narrow)
+        """Build an itinerary that strictly respects user constraints.
+
+        Constraint hierarchy (notebook v3 spec):
+          - max_km : HARD constraint, distance from HOME (radius), never relaxed.
+                     If no destinations within radius → return empty steps + notice.
+          - budget : HARD per-step constraint; no relaxation.
+          - categories : preference. If user selects ≥2 categories AND count ≥ N
+                     categories, every category MUST appear at least once
+                     (post-pick swap enforces this).
+
+        The response includes a `notices` array of human-readable strings the
+        frontend can surface to explain why constraints affected output.
+        """
+        notices: List[str] = []
+
+        # 1. Filter by category preference. Hard if user explicitly picked
+        # categories — we don't expand to all categories silently anymore
+        # because that subverts user intent. If too narrow, we keep the
+        # narrow pool and let max_km/count be the limiter.
         if categories:
             pool = self.df[self.df["category"].isin(categories)].copy()
-            if len(pool) < count:
-                log.info("Category filter too narrow (%d), expanding to all.", len(pool))
+            if pool.empty:
+                # User picked categories but none exist in dataset (shouldn't happen
+                # post-validation but guard anyway).
                 pool = self.df.copy()
+                notices.append(
+                    "Kategori yang kamu pilih tidak ada di database — menggunakan semua kategori."
+                )
         else:
             pool = self.df.copy()
 
-        # 2. Score & take top candidates (overshoot for NN-TSP slack)
+        # 2. HARD max_km filter from HOME (radius semantic, not per-hop).
+        # This matches notebook v3 §11 (env.get_valid_actions hard-gate).
+        if max_km is not None:
+            pool["_dist_home_pre"] = pool.apply(
+                lambda r: haversine_km(home, (r["lat"], r["lng"])), axis=1
+            )
+            n_before = len(pool)
+            pool = pool[pool["_dist_home_pre"] <= float(max_km)].copy()
+            n_after = len(pool)
+
+            if pool.empty:
+                # No destination satisfies the radius — explain why.
+                msg = (
+                    f"Tidak ada destinasi wisata dalam radius {max_km:.0f} km dari "
+                    f"titik mulai. Coba perbesar batasan jarak (mis. 15-25 km), atau "
+                    f"pilih titik mulai yang lebih dekat ke pusat kota."
+                )
+                notices.append(msg)
+                log.info("max_km=%s filtered out all %d candidates.", max_km, n_before)
+                return self._empty_itinerary(home, start_min, end_min, notices)
+
+            log.info(
+                "max_km=%.1f kept %d/%d destinations in radius from home.",
+                max_km, n_after, n_before
+            )
+
+        # 3. HARD budget filter (no destination above remaining budget can be picked).
+        # Pre-filter at the pool level: any single-destination > budget is a no-op.
+        if budget is not None and budget > 0:
+            n_before = len(pool)
+            pool = pool[pool["ticket"].astype(int) <= int(budget)].copy()
+            if len(pool) < n_before:
+                log.info(
+                    "Budget %s removed %d destinations above budget.",
+                    budget, n_before - len(pool)
+                )
+            if pool.empty:
+                notices.append(
+                    f"Tidak ada destinasi dengan tiket di bawah budget Rp {budget:,}. "
+                    "Coba naikkan budget atau biarkan kosong."
+                )
+                return self._empty_itinerary(home, start_min, end_min, notices)
+
+        # 4. Score & take top candidates (overshoot for NN-TSP slack)
         scored = self._score_candidates(pool, categories, home)
         top_n = max(count * 4, 16)
         candidates = scored.nlargest(top_n, "_score").reset_index(drop=True)
 
-        # 3. Nearest-neighbor walk from home, respecting budget + max_km
+        # 5. Nearest-neighbor walk from home, respecting all constraints.
+        # max_km is enforced as distance-from-HOME (radius), NOT per-hop.
         chain: List[pd.Series] = []
         cursor: Tuple[float, float] = home
         used: set[str] = set()
         spent = 0
 
         for _ in range(count):
-            best_idx, best_dist = -1, math.inf
+            best_idx, best_dist_from_cursor = -1, math.inf
             for i, row in candidates.iterrows():
                 if row["id"] in used:
                     continue
-                d = haversine_km(cursor, (row["lat"], row["lng"]))
-                if max_km is not None and d > max_km:
+                # Hard radius check (distance from home)
+                d_home = haversine_km(home, (row["lat"], row["lng"]))
+                if max_km is not None and d_home > max_km:
                     continue
+                # Hard budget check (cumulative)
                 if budget is not None and spent + int(row["ticket"]) > budget:
                     continue
-                if d < best_dist:
-                    best_dist = d
+                # Among allowed, prefer closest to current cursor (NN-TSP)
+                d_cursor = haversine_km(cursor, (row["lat"], row["lng"]))
+                if d_cursor < best_dist_from_cursor:
+                    best_dist_from_cursor = d_cursor
                     best_idx = i
 
             if best_idx == -1:
-                # Relax constraints — pick the closest remaining
-                for i, row in candidates.iterrows():
-                    if row["id"] in used:
-                        continue
-                    d = haversine_km(cursor, (row["lat"], row["lng"]))
-                    if d < best_dist:
-                        best_dist = d
-                        best_idx = i
-
-            if best_idx == -1:
+                # No more valid candidates within constraints. Stop early —
+                # never relax max_km/budget per the user's HARD requirement.
                 break
 
             picked = candidates.iloc[best_idx]
             used.add(picked["id"])
-            chain.append((picked, best_dist))
+            chain.append((picked, best_dist_from_cursor))
             spent += int(picked["ticket"])
             cursor = (picked["lat"], picked["lng"])
 
-        # 4. Schedule (arrival/departure times) and totals
+        # 6. Category fairness post-pick (notebook v3 §15 enforce_category_guarantee)
+        # Only enforce when count > 1, len(categories) >= 2, and we actually have room.
+        # Single-destination trips bypass guarantee per user's spec.
+        if (
+            count > 1
+            and len(categories) >= 2
+            and len(chain) >= min(count, len(categories))
+        ):
+            chain, swap_notices = self._enforce_category_fairness(
+                chain=chain,
+                candidates=candidates,
+                categories=categories,
+                home=home,
+                max_km=max_km,
+                budget=budget,
+            )
+            notices.extend(swap_notices)
+
+            # Recompute travel distances for the (possibly reordered) chain.
+            chain = self._reflow_chain_distances(chain, home)
+
+        # 7. Notice if we couldn't fill all slots
+        if len(chain) < count:
+            notices.append(
+                f"Hanya {len(chain)} destinasi yang memenuhi semua batasan "
+                f"(diminta {count}). Coba longgarkan jarak/budget atau "
+                f"perpanjang jam perjalanan."
+            )
+
+        # 8. Schedule (arrival/departure times) and totals
         steps: List[Dict[str, Any]] = []
         t = start_min
         total_cost = 0
@@ -412,12 +503,18 @@ class Recommender:
             t = depart
             cursor = (row["lat"], row["lng"])
 
-        # 5. Return-home leg
+        # 9. Return-home leg
         return_km = haversine_km(cursor, home) if chain else 0.0
         return_min = round((return_km / CITY_TRAVEL_SPEED_KMH) * 60)
         total_km += return_km
         arrive_home = t + return_min
         total_time = arrive_home - start_min
+
+        # Defensive: budget overrun should not happen with HARD filter, but log if it does.
+        if budget is not None and total_cost > budget:
+            log.warning(
+                "Budget overrun despite hard filter: total=%d budget=%d", total_cost, budget
+            )
 
         return {
             "steps": steps,
@@ -429,4 +526,160 @@ class Recommender:
             "arriveHome": arrive_home,
             "overBudget": arrive_home > end_min,
             "spareMin": end_min - arrive_home,
+            "notices": notices,
         }
+
+    def _empty_itinerary(
+        self,
+        home: Tuple[float, float],
+        start_min: int,
+        end_min: int,
+        notices: List[str],
+    ) -> Dict[str, Any]:
+        """Short-circuit response when no destinations satisfy hard constraints."""
+        return {
+            "steps": [],
+            "totalCost": 0,
+            "totalKm": 0.0,
+            "totalTime": 0,
+            "returnKm": 0.0,
+            "returnMin": 0,
+            "arriveHome": start_min,
+            "overBudget": False,
+            "spareMin": end_min - start_min,
+            "notices": notices,
+        }
+
+    def _enforce_category_fairness(
+        self,
+        chain: List[Tuple[pd.Series, float]],
+        candidates: pd.DataFrame,
+        categories: List[str],
+        home: Tuple[float, float],
+        max_km: Optional[float],
+        budget: Optional[int],
+    ) -> Tuple[List[Tuple[pd.Series, float]], List[str]]:
+        """Ensure every user-selected category appears at least once.
+
+        Mirrors notebook v3 §15 enforce_category_guarantee. Strategy:
+          1. Identify missing categories from the chain.
+          2. For each missing category, find the highest-scored candidate
+             (in pool, satisfying all HARD constraints) and swap with the
+             most over-represented destination that has the lowest rating.
+          3. Travel distances are recomputed by `_reflow_chain_distances` after.
+        """
+        notices: List[str] = []
+        if not chain:
+            return chain, notices
+
+        chosen = list(chain)  # copies of (row, dist) tuples
+        chosen_ids = {row["id"] for row, _ in chosen}
+        chosen_cats = [row["category"] for row, _ in chosen]
+        from collections import Counter
+        cat_counts = Counter(chosen_cats)
+        missing = [c for c in categories if c not in cat_counts]
+        if not missing:
+            return chosen, notices
+
+        budget_left = (
+            int(budget) - sum(int(r["ticket"]) for r, _ in chosen)
+            if budget is not None
+            else None
+        )
+
+        for missing_cat in missing:
+            # Find best-scored candidate of this missing category that fits constraints.
+            cand_pool = candidates[
+                (candidates["category"] == missing_cat)
+                & (~candidates["id"].isin(chosen_ids))
+            ].sort_values("_score", ascending=False)
+
+            picked_replacement = None
+            for _, row in cand_pool.iterrows():
+                # Hard radius check (from HOME)
+                d_home = haversine_km(home, (row["lat"], row["lng"]))
+                if max_km is not None and d_home > max_km:
+                    continue
+                # Hard budget — must fit the swap delta.
+                # We compare against the *swap target's* ticket so we know the net.
+                picked_replacement = row
+                break
+
+            if picked_replacement is None:
+                continue
+
+            # Find swap target: kategori paling over-represented dengan rating terendah.
+            over_cats = [
+                c for c in cat_counts
+                if c != missing_cat and cat_counts[c] > 1
+            ]
+            if over_cats:
+                # Most over-represented first
+                target_cat = max(over_cats, key=lambda c: cat_counts[c])
+                # Lowest rated entry of that category in chosen
+                swap_target_idx = -1
+                lowest_rating = math.inf
+                for i, (r, _) in enumerate(chosen):
+                    if r["category"] == target_cat and float(r["rating"]) < lowest_rating:
+                        lowest_rating = float(r["rating"])
+                        swap_target_idx = i
+            else:
+                # No over-represented category — swap the lowest-rated NON-missing entry
+                swap_target_idx = -1
+                lowest_rating = math.inf
+                for i, (r, _) in enumerate(chosen):
+                    if r["category"] != missing_cat and float(r["rating"]) < lowest_rating:
+                        lowest_rating = float(r["rating"])
+                        swap_target_idx = i
+
+            if swap_target_idx == -1:
+                continue
+
+            swap_target_row, _ = chosen[swap_target_idx]
+            # Verify budget after swap
+            if budget_left is not None:
+                delta = int(picked_replacement["ticket"]) - int(swap_target_row["ticket"])
+                if budget_left - delta < 0:
+                    continue
+                budget_left -= delta
+
+            # Apply swap (distance will be recomputed)
+            chosen[swap_target_idx] = (picked_replacement, 0.0)
+            chosen_ids.discard(swap_target_row["id"])
+            chosen_ids.add(picked_replacement["id"])
+            cat_counts[swap_target_row["category"]] -= 1
+            cat_counts[missing_cat] = cat_counts.get(missing_cat, 0) + 1
+            log.info(
+                "Category swap: '%s' (%s) → '%s' (%s)",
+                swap_target_row["name"], swap_target_row["category"],
+                picked_replacement["name"], missing_cat,
+            )
+
+        # Final notice if some categories still missing
+        final_cats = {r["category"] for r, _ in chosen}
+        still_missing = [c for c in categories if c not in final_cats]
+        if still_missing:
+            notices.append(
+                f"Kategori {', '.join(still_missing)} tidak terwakili karena "
+                f"tidak ada destinasi yang memenuhi semua batasan."
+            )
+
+        return chosen, notices
+
+    @staticmethod
+    def _reflow_chain_distances(
+        chain: List[Tuple[pd.Series, float]],
+        home: Tuple[float, float],
+    ) -> List[Tuple[pd.Series, float]]:
+        """Recompute travel-from-previous distances after a category swap.
+
+        Order is preserved (we don't re-run TSP) but distances need to reflect
+        the new sequence. Returns new list of (row, dist_from_prev_or_home).
+        """
+        out: List[Tuple[pd.Series, float]] = []
+        prev: Tuple[float, float] = home
+        for row, _ in chain:
+            d = haversine_km(prev, (row["lat"], row["lng"]))
+            out.append((row, d))
+            prev = (row["lat"], row["lng"])
+        return out

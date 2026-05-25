@@ -1,5 +1,5 @@
-import React, { useState } from "react";
-import { ALL_CATEGORIES } from "../data/homeOptions";
+import React, { useMemo, useState } from "react";
+import { ALL_CATEGORIES, CATEGORY_DESCRIPTIONS } from "../data/homeOptions";
 
 function ProgressLine({ label, done, active }) {
   return (
@@ -37,6 +37,32 @@ const parseHM = (s) => {
   return h * 60 + m;
 };
 
+// Validasi sebelum submit. Kembalikan array string error agar UI bisa
+// menampilkannya sekaligus (lebih baik daripada alert satu-satu).
+function validateForm({ count, startMin, endMin, budget, budgetOn, maxKm, maxKmOn, categories }) {
+  const errors = [];
+
+  if (count < 1 || count > 8) {
+    errors.push("Jumlah destinasi harus antara 1 sampai 8.");
+  }
+  if (endMin <= startMin) {
+    errors.push("Jam selesai harus setelah jam mulai.");
+  }
+  // Minimum 2 jam total — kurang dari ini biasanya tidak realistis untuk minimal 1 destinasi
+  if (endMin - startMin < 90) {
+    errors.push("Total waktu perjalanan minimal 1.5 jam (cukup untuk 1 destinasi + transit).");
+  }
+  if (budgetOn && (budget < 0 || budget > 50_000_000)) {
+    errors.push("Budget harus antara 0 dan 50 juta rupiah.");
+  }
+  if (maxKmOn && (maxKm < 1 || maxKm > 100)) {
+    errors.push("Jarak maksimal harus antara 1 dan 100 km.");
+  }
+  // Validasi count vs categories: kalau count < jumlah kategori dipilih,
+  // cukup beri warning lewat info — tidak block submit.
+  return errors;
+}
+
 export default function FormScreen({ homeData, onBack, onSubmit }) {
   const [count, setCount] = useState(4);
   const [maxKmOn, setMaxKmOn] = useState(false);
@@ -44,27 +70,60 @@ export default function FormScreen({ homeData, onBack, onSubmit }) {
   const [startHM, setStartHM] = useState("09:00");
   const [endHM, setEndHM] = useState("21:00");
   const [budgetOn, setBudgetOn] = useState(true);
-  const [budget, setBudget] = useState(500000);
+  const [budget, setBudget] = useState(500_000);
+  // Default: Alam + Kuliner (no Belanja — kategori itu sudah dihapus)
   const [categories, setCategories] = useState(["Alam", "Kuliner"]);
+  const [submitErrors, setSubmitErrors] = useState([]);
 
   const toggleCat = (c) => {
     setCategories((prev) => (prev.includes(c) ? prev.filter((x) => x !== c) : [...prev, c]));
+    setSubmitErrors([]); // reset errors saat user mengubah input
   };
 
+  const startMin = parseHM(startHM);
+  const endMin = parseHM(endHM);
+  const dur = endMin - startMin;
+  const durStr = dur > 0 ? `${Math.floor(dur / 60)} jam ${dur % 60} menit` : "—";
+
+  // Soft warning kalau count < kategori dipilih (akan ada kategori yg tidak terwakili)
+  const categoryCoverageWarning = useMemo(() => {
+    if (categories.length >= 2 && count < categories.length) {
+      return `Kamu pilih ${categories.length} kategori tapi hanya ${count} destinasi — agen akan mengutamakan ${count} kategori dengan skor tertinggi, sisanya tidak terwakili.`;
+    }
+    return null;
+  }, [count, categories.length]);
+
+  // Tip kalau max_km terlalu ketat (mungkin bikin hasil kosong)
+  const tightDistanceTip = useMemo(() => {
+    if (!maxKmOn) return null;
+    if (maxKm < 5) {
+      return `Radius ${maxKm} km dari home sangat ketat untuk Bandung. Kemungkinan besar tidak ada destinasi wisata yang masuk — coba 10 km ke atas. Sistem akan memberi tahu kalau memang tidak ada yang cocok.`;
+    }
+    if (maxKm < 10) {
+      return `Radius ${maxKm} km cukup ketat — destinasi yang muncul akan terbatas di sekitar pusat kota. Naikkan ke 20-30 km kalau mau cakupan lebih luas (Lembang, Ciwidey).`;
+    }
+    return null;
+  }, [maxKmOn, maxKm]);
+
   const submit = () => {
+    const errs = validateForm({
+      count, startMin, endMin, budget, budgetOn, maxKm, maxKmOn, categories,
+    });
+    if (errs.length) {
+      setSubmitErrors(errs);
+      return;
+    }
+    setSubmitErrors([]);
     onSubmit({
       ...homeData,
       count,
       maxKm: maxKmOn ? maxKm : null,
-      startMin: parseHM(startHM),
-      endMin: parseHM(endHM),
+      startMin,
+      endMin,
       budget: budgetOn ? budget : null,
       categories,
     });
   };
-
-  const dur = parseHM(endHM) - parseHM(startHM);
-  const durStr = dur > 0 ? `${Math.floor(dur / 60)} jam ${dur % 60} menit` : "—";
 
   return (
     <div className="form-screen">
@@ -116,7 +175,7 @@ export default function FormScreen({ homeData, onBack, onSubmit }) {
         </p>
 
         <div className="field-grid">
-          {/* Number of destinations */}
+          {/* Jumlah destinasi */}
           <div className="field">
             <label>
               Jumlah Destinasi
@@ -175,7 +234,7 @@ export default function FormScreen({ homeData, onBack, onSubmit }) {
           <div className="field">
             <label>
               <span>
-                Jarak Maks. Antar Tempat{" "}
+                Jarak Maks. dari Home{" "}
                 <span
                   style={{
                     color: "var(--ink-dim)",
@@ -196,6 +255,7 @@ export default function FormScreen({ homeData, onBack, onSubmit }) {
               <input
                 type="number"
                 min="1"
+                max="100"
                 step="1"
                 value={maxKm}
                 onChange={(e) => setMaxKm(Math.max(1, parseInt(e.target.value, 10) || 1))}
@@ -203,8 +263,15 @@ export default function FormScreen({ homeData, onBack, onSubmit }) {
                 placeholder="40"
               />
               <span className="num-suffix">km</span>
-              <div className="num-meta">{maxKmOn ? `≤ ${maxKm} km tiap hop` : "—"}</div>
+              <div className="num-meta">
+                {maxKmOn ? `Setiap destinasi ≤ ${maxKm} km dari home` : "—"}
+              </div>
             </div>
+            {tightDistanceTip && (
+              <div className="form-info" style={{ marginTop: 8 }}>
+                ℹ {tightDistanceTip}
+              </div>
+            )}
           </div>
 
           {/* Time start/end */}
@@ -230,7 +297,11 @@ export default function FormScreen({ homeData, onBack, onSubmit }) {
           <div className="field field-full">
             <label>
               Kategori Favorit
-              <span className="help">{categories.length} dipilih · biarkan kosong untuk semua</span>
+              <span className="help">
+                {categories.length === 0
+                  ? "Belum ada — biarkan kosong = semua kategori"
+                  : `${categories.length} dipilih`}
+              </span>
             </label>
             <div className="chips">
               {ALL_CATEGORIES.map((c) => (
@@ -238,14 +309,33 @@ export default function FormScreen({ homeData, onBack, onSubmit }) {
                   key={c}
                   className={`chip ${categories.includes(c) ? "on" : ""}`}
                   onClick={() => toggleCat(c)}
+                  title={CATEGORY_DESCRIPTIONS[c] || c}
                 >
                   {c}
                   <span className="x">×</span>
                 </span>
               ))}
             </div>
+
+            {categoryCoverageWarning && (
+              <div className="form-info" style={{ marginTop: 10 }}>
+                ℹ {categoryCoverageWarning}
+              </div>
+            )}
           </div>
         </div>
+
+        {/* Inline errors di atas tombol submit */}
+        {submitErrors.length > 0 && (
+          <div className="form-errors" role="alert">
+            <div className="form-errors-head">⚠ Tidak bisa lanjut — perbaiki dulu:</div>
+            <ul>
+              {submitErrors.map((e, i) => (
+                <li key={i}>{e}</li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         <div className="form-footer">
           <div className="note">

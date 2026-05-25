@@ -25,6 +25,11 @@ from pydantic import BaseModel, Field
 from recommender import Recommender
 from llm_storyteller import generate_story
 
+# Kategori valid sesuai notebook v3. Frontend mengirim subset dari ini.
+# Permissive: kalau frontend kirim kategori unknown, kita filter & log saja
+# alih-alih reject — pengalaman user lebih baik.
+VALID_CATEGORIES = {"Alam", "Kuliner", "Wisata"}
+
 # ── Setup ────────────────────────────────────────────────────────────────
 load_dotenv()
 logging.basicConfig(
@@ -87,25 +92,6 @@ def root():
         "health": "/api/health",
     }
 
-@app.get("/api/debug-paths")        # ← TAMBAHKAN BLOK INI
-def debug_paths():
-    from pathlib import Path
-    backend_dir = Path(__file__).resolve().parent
-    repo_root   = backend_dir.parent
-    models_dir  = repo_root / "models"
-    return {
-        "__file__":      str(Path(__file__).resolve()),
-        "backend_dir":   str(backend_dir),
-        "repo_root":     str(repo_root),
-        "models_dir":    str(models_dir),
-        "models_exists": models_dir.exists(),
-        "models_files":  os.listdir(str(models_dir)) if models_dir.exists() else [],
-        "app_exists":    Path("/app").exists(),
-        "app_contents":  os.listdir("/app") if Path("/app").exists() else [],
-        "app_models":    os.listdir("/app/models") if Path("/app/models").exists() else "NOT FOUND",
-        "cwd":           os.getcwd(),
-        "cwd_contents":  os.listdir(os.getcwd()),
-    }
 
 @app.get("/api/health")
 def health():
@@ -126,7 +112,24 @@ def health():
 @app.post("/api/plan")
 def plan(req: PlanRequest):
     if req.endMin <= req.startMin:
-        raise HTTPException(status_code=400, detail="endMin harus lebih besar dari startMin.")
+        raise HTTPException(
+            status_code=400,
+            detail="Jam selesai harus lebih besar dari jam mulai.",
+        )
+    if (req.endMin - req.startMin) < 90:
+        raise HTTPException(
+            status_code=400,
+            detail="Total durasi perjalanan minimal 90 menit (kurang dari itu sulit memuat 1 destinasi).",
+        )
+
+    # Permissive category filter: drop yang tidak dikenal, peringatkan via log.
+    # Kalau setelah filter masih kosong, biarkan recommender pakai semua kategori.
+    cleaned_categories = [c for c in (req.categories or []) if c in VALID_CATEGORIES]
+    if req.categories and not cleaned_categories:
+        log.warning(
+            "Semua kategori user (%s) tidak dikenal — fallback ke semua kategori.",
+            req.categories,
+        )
 
     try:
         itinerary = recommender.build_itinerary(
@@ -136,16 +139,41 @@ def plan(req: PlanRequest):
             start_min=req.startMin,
             end_min=req.endMin,
             budget=req.budget,
-            categories=req.categories,
+            categories=cleaned_categories,
         )
+    except FileNotFoundError as exc:
+        # Artefak hilang — error operations, bukan logic. Bantu developer.
+        log.exception("Artifact missing")
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Model belum siap di server (artifact pickle/CSV tidak ditemukan). "
+                "Hubungi tim untuk re-deploy."
+            ),
+        ) from exc
+    except ValueError as exc:
+        # Data malformed (mis. column hilang) — beri pesan jelas.
+        log.exception("Data validation failed")
+        raise HTTPException(status_code=500, detail=f"Data internal bermasalah: {exc}") from exc
     except Exception as exc:  # noqa: BLE001
         log.exception("Recommender failed")
-        raise HTTPException(status_code=500, detail=f"Recommender error: {exc}") from exc
+        raise HTTPException(
+            status_code=500,
+            detail="Recommender engine gagal memproses permintaan. Coba lagi dalam beberapa saat.",
+        ) from exc
 
     # LLM narrative is best-effort: never fail the whole response if Groq
     # is down, missing API key, or rate-limited. The fallback narrator returns
     # a generic story so the frontend always has something to render.
-    story = generate_story(itinerary, home_name=req.homeName, categories=req.categories)
+    # Skip LLM if no destinations were found (empty itinerary) — narrative
+    # would be misleading.
+    if itinerary.get("steps"):
+        story = generate_story(itinerary, home_name=req.homeName, categories=cleaned_categories)
+    else:
+        story = {
+            "story": "",
+            "vibe": "",
+        }
 
     return {
         **itinerary,
