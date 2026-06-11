@@ -2,20 +2,19 @@ import React, { useState } from "react";
 import { HOME_OPTIONS } from "../data/homeOptions";
 
 // Map error code dari Geolocation API ke pesan Indonesia yang ramah.
-// Spec: https://developer.mozilla.org/en-US/docs/Web/API/GeolocationPositionError
 function geoErrorMessage(err) {
   switch (err && err.code) {
-    case 1: // PERMISSION_DENIED
+    case 1:
       return {
         kind: "warn",
         text: "Izin lokasi ditolak. Aktifkan izin lokasi di browser, atau pilih titik mulai manual di bawah.",
       };
-    case 2: // POSITION_UNAVAILABLE
+    case 2:
       return {
         kind: "warn",
         text: "Lokasi tidak tersedia (GPS/jaringan kurang akurat). Pilih titik mulai manual di bawah.",
       };
-    case 3: // TIMEOUT
+    case 3:
       return {
         kind: "warn",
         text: "Pencarian lokasi terlalu lama. Coba lagi atau pilih titik mulai manual di bawah.",
@@ -33,7 +32,7 @@ export default function WelcomeScreen({ onNext }) {
   const [coord, setCoord] = useState(null);
   const [homeName, setHomeName] = useState("Alun-Alun Bandung");
   const [manualId, setManualId] = useState("alun-alun");
-  const [notice, setNotice] = useState(null); // { kind: "warn"|"info"|"err", text }
+  const [notice, setNotice] = useState(null);
 
   const showNotice = (kind, text) => setNotice({ kind, text });
   const clearNotice = () => setNotice(null);
@@ -43,25 +42,17 @@ export default function WelcomeScreen({ onNext }) {
     setStage("locating");
 
     if (!navigator.geolocation) {
-      showNotice(
-        "warn",
-        "Browser kamu tidak mendukung geolokasi. Pilih titik mulai manual di bawah."
-      );
+      showNotice("warn", "Browser kamu tidak mendukung geolokasi. Pilih titik mulai manual di bawah.");
       setStage("idle");
       return;
     }
 
-    // Real Web Geolocation API. Requires HTTPS in production (Vercel ✓) or
-    // localhost for dev. The browser will show a permission prompt on first use.
     navigator.geolocation.getCurrentPosition(
       (position) => {
-        const c = {
-          lat: position.coords.latitude,
-          lng: position.coords.longitude,
-        };
+        const c = { lat: position.coords.latitude, lng: position.coords.longitude };
         setCoord(c);
         setHomeName("Lokasi Saya");
-        setManualId(null); // not from HOME_OPTIONS
+        setManualId(null);
         setStage("found");
       },
       (error) => {
@@ -70,11 +61,7 @@ export default function WelcomeScreen({ onNext }) {
         showNotice(kind, text);
         setStage("idle");
       },
-      {
-        enableHighAccuracy: true,
-        timeout: 10_000,
-        maximumAge: 0,
-      }
+      { enableHighAccuracy: true, timeout: 10_000, maximumAge: 0 }
     );
   };
 
@@ -100,28 +87,28 @@ export default function WelcomeScreen({ onNext }) {
   return (
     <div className="welcome">
       <div className="welcome-left">
-        <div className="kicker">Capstone · AI Travel Agent</div>
+        {/* Updated kicker: brand + group identity */}
+        <div className="kicker">GuideYou&amp;AI · Capstone Group 6</div>
         <h1 className="display">
-          Rencanain harimu di <em>Bandung</em>,
-          <br />
-          tanpa drama.
+          Rencanain harimu di <em>Bandung</em>,<br />bareng AI.
         </h1>
         <p className="lede">
-          Beri tahu kami dari mana kamu berangkat, berapa lama waktumu, dan apa yang kamu suka — agen
-          perjalanan kami akan menyusun rute yang masuk akal, hemat waktu, dan sesuai vibe kamu. Tanpa
-          peta yang membingungkan, hanya itinerary yang siap dijalanin.
+          GuideYou&amp;AI membantu kamu menyusun rute perjalanan di Bandung secara
+          otomatis. Cukup beri tahu titik mulai, waktu, dan preferensimu —
+          AI kami akan merancang itinerary yang optimal, hemat waktu, dan
+          sesuai vibe kamu.
         </p>
         <div style={{ display: "flex", gap: 28, color: "var(--ink-mute)", fontSize: 13 }}>
           <div className="row">
-            <span style={{ background: "var(--saffron)", width: 6, height: 6, borderRadius: "50%" }} />{" "}
+            <span style={{ background: "var(--saffron)", width: 6, height: 6, borderRadius: "50%", display: "inline-block" }} />{" "}
             Filter cerdas
           </div>
           <div className="row">
-            <span style={{ background: "var(--jade)", width: 6, height: 6, borderRadius: "50%" }} />{" "}
+            <span style={{ background: "var(--jade)", width: 6, height: 6, borderRadius: "50%", display: "inline-block" }} />{" "}
             Rekomendasi berbasis preferensi
           </div>
           <div className="row">
-            <span style={{ background: "var(--coral)", width: 6, height: 6, borderRadius: "50%" }} />{" "}
+            <span style={{ background: "var(--coral)", width: 6, height: 6, borderRadius: "50%", display: "inline-block" }} />{" "}
             Optimisasi rute
           </div>
         </div>
@@ -140,27 +127,12 @@ export default function WelcomeScreen({ onNext }) {
               <div className="orbit o3" />
             </div>
             {stage === "idle" && (
-              <div
-                style={{
-                  position: "relative",
-                  color: "var(--ink-dim)",
-                  fontFamily: "var(--font-mono)",
-                  fontSize: 12,
-                }}
-              >
+              <div style={{ position: "relative", color: "var(--ink-dim)", fontFamily: "var(--font-mono)", fontSize: 12 }}>
                 — menunggu lokasi —
               </div>
             )}
             {stage === "locating" && (
-              <div
-                style={{
-                  position: "relative",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: 12,
-                }}
-              >
+              <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 12 }}>
                 <div className="pulse" />
                 <div style={{ fontFamily: "var(--font-mono)", fontSize: 12, color: "var(--saffron)" }}>
                   Mendeteksi koordinat…
@@ -168,27 +140,13 @@ export default function WelcomeScreen({ onNext }) {
               </div>
             )}
             {stage === "found" && coord && (
-              <div
-                style={{
-                  position: "relative",
-                  display: "flex",
-                  flexDirection: "column",
-                  alignItems: "center",
-                  gap: 10,
-                }}
-              >
-                <div
-                  style={{
-                    width: 44,
-                    height: 44,
-                    borderRadius: "50%",
-                    background: "linear-gradient(135deg, var(--saffron), var(--coral))",
-                    display: "grid",
-                    placeItems: "center",
-                    fontSize: 20,
-                    boxShadow: "0 0 32px rgba(232,160,74,.5)",
-                  }}
-                >
+              <div style={{ position: "relative", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
+                <div style={{
+                  width: 44, height: 44, borderRadius: "50%",
+                  background: "linear-gradient(135deg, var(--saffron), var(--coral))",
+                  display: "grid", placeItems: "center", fontSize: 20,
+                  boxShadow: "0 0 32px rgba(232,160,74,.5)",
+                }}>
                   ⌂
                 </div>
                 <div style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--ink-mute)" }}>
@@ -201,25 +159,17 @@ export default function WelcomeScreen({ onNext }) {
           {stage === "found" && coord && (
             <div className="coord-readout">
               <span>LAT / LNG</span>
-              <span>
-                {coord.lat.toFixed(4)}, {coord.lng.toFixed(4)}
-              </span>
+              <span>{coord.lat.toFixed(4)}, {coord.lng.toFixed(4)}</span>
             </div>
           )}
 
-          {/* Inline notice menggantikan alert() */}
           {notice && (
             <div className={`inline-notice notice-${notice.kind}`} role="status">
               <span className="notice-ico" aria-hidden="true">
                 {notice.kind === "warn" ? "⚠" : notice.kind === "err" ? "✕" : "ℹ"}
               </span>
               <span>{notice.text}</span>
-              <button
-                type="button"
-                className="notice-close"
-                onClick={clearNotice}
-                aria-label="Tutup notifikasi"
-              >
+              <button type="button" className="notice-close" onClick={clearNotice} aria-label="Tutup notifikasi">
                 ×
               </button>
             </div>
@@ -246,20 +196,12 @@ export default function WelcomeScreen({ onNext }) {
 
           <div className="manual">
             <label>Atau pilih manual</label>
-            <select
-              className="select"
-              value={manualId ?? ""}
-              onChange={(e) => handleManual(e.target.value)}
-            >
+            <select className="select" value={manualId ?? ""} onChange={(e) => handleManual(e.target.value)}>
               {manualId === null && (
-                <option value="" disabled>
-                  📍 Lokasi GPS aktif — pilih untuk override
-                </option>
+                <option value="" disabled>📍 Lokasi GPS aktif — pilih untuk override</option>
               )}
               {HOME_OPTIONS.map((o) => (
-                <option key={o.id} value={o.id}>
-                  {o.name}
-                </option>
+                <option key={o.id} value={o.id}>{o.name}</option>
               ))}
             </select>
           </div>

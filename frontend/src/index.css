@@ -122,20 +122,22 @@ body::before {
   display: flex; align-items: center; gap: 12px;
 }
 .brand-mark {
-  width: 32px; height: 32px;
-  border-radius: 10px;
-  background: linear-gradient(135deg, var(--saffron) 0%, var(--coral) 100%);
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  background: transparent;
   display: grid; place-items: center;
-  font-family: var(--font-display);
-  font-weight: 600;
-  color: #1a1206;
-  font-size: 18px;
-  box-shadow: 0 6px 18px -8px rgba(232,160,74,.6);
+  overflow: hidden;
+  box-shadow: 0 0 0 1px var(--line), 0 6px 18px -8px rgba(232,160,74,.4);
+  flex-shrink: 0;
+}
+.brand-mark svg {
+  width: 36px; height: 36px;
 }
 .brand-name {
   font-family: var(--font-display);
-  font-size: 17px;
+  font-size: 18px;
   font-weight: 500;
+  letter-spacing: -0.01em;
 }
 .brand-name span { color: var(--saffron); }
 .topbar .meta {
