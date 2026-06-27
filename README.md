@@ -1,51 +1,75 @@
-# 🗺️ Bandung AI Travel Agent
-
-> **Smart itinerary planner untuk wisata Bandung Raya.**
-> Input profil perjalanan → sistem rekomendasikan destinasi optimal dengan narasi cerita yang dihasilkan oleh LLM.
-
 <div align="center">
+  <img src="docs/branding/logo.svg" alt="GuideYou&amp;AI logo" width="96" height="96" />
 
-![Version](https://img.shields.io/badge/version-1.0.0-blue)
-![Python](https://img.shields.io/badge/python-3.11-blue)
-![React](https://img.shields.io/badge/react-18.3-61DAFB)
-![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688)
-![License](https://img.shields.io/badge/license-Academic-orange)
+  # GuideYou&AI
 
-**Capstone Project · Program Studi Data Science · Telkom University**
+  **Itinerary planner berbasis AI untuk wisata Bandung Raya.**
+  Masukkan titik keberangkatan, preferensi kategori, budget, dan jam perjalanan, sistem menyusun rute kunjungan yang optimal lengkap dengan narasi cerita yang dihasilkan LLM.
 
-| Kelompok 6 | NIM | Peran |
-|---|---|---|
-| Arkhan Falih Fahrie Puspita | 103052330051 | Backend — Recommendation System (CBF + RL) |
-| Avatar Bintang Ramadhan | 103052300007 | Backend — LLM Storyteller |
-| Azza Zukhrufa | 103052300014 | Frontend — React UI |
-| Azzahra Sabryna Anggara | 103052300018 | Integrasi End-to-End |
+  ![Version](https://img.shields.io/badge/version-1.0.0-blue)
+  ![Python](https://img.shields.io/badge/python-3.11-blue)
+  ![React](https://img.shields.io/badge/react-18.3-61DAFB)
+  ![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688)
+  ![License](https://img.shields.io/badge/license-Academic-orange)
 
+  **Capstone Project · Program Studi Sains Data · Telkom University**
 </div>
 
 ---
 
 ## Daftar Isi
 
-- [Demo](#demo)
+- [Tentang Proyek](#tentang-proyek)
+- [Tampilan Aplikasi](#tampilan-aplikasi)
 - [Arsitektur Sistem](#arsitektur-sistem)
 - [Fitur Utama](#fitur-utama)
-- [Dataset & Model](#dataset--model)
+- [Dataset dan Model](#dataset-dan-model)
 - [Struktur Direktori](#struktur-direktori)
-- [Cara Menjalankan Lokal](#cara-menjalankan-lokal)
-- [API Reference](#api-reference)
+- [Menjalankan Secara Lokal](#menjalankan-secara-lokal)
+- [Referensi API](#referensi-api)
 - [Deployment](#deployment)
 - [Evaluasi Model](#evaluasi-model)
 - [Pembagian Tugas](#pembagian-tugas)
+- [Catatan Teknis](#catatan-teknis)
+- [Referensi](#referensi)
 
 ---
 
-## Demo
+## Tentang Proyek
 
-| URL | Keterangan |
-|---|---|
-| **Frontend (Vercel)** | `https://bandung-travel.vercel.app` |
-| **Backend Health** | `https://bandungaitravel-capstone-project-production.up.railway.app/api/health` |
-| **API Docs (Swagger)** | `https://bandungaitravel-capstone-project-production.up.railway.app/docs` |
+GuideYou&AI merencanakan itinerary wisata satu hari di kawasan Bandung Raya secara otomatis. Mesin rekomendasi menggabungkan Content-Based Filtering dan Reinforcement Learning untuk memilih destinasi yang relevan dengan preferensi pengguna, lalu menyusun urutan kunjungan dengan heuristik TSP nearest-neighbor agar rute tidak bolak-balik tanpa arah. Setiap itinerary yang dihasilkan disertai narasi perjalanan dalam Bahasa Indonesia yang ditulis oleh LLM.
+
+Proyek dibangun sebagai capstone Program Studi Sains Data, Telkom University, dengan dataset 1.459 destinasi di kawasan Bandung Raya yang dikumpulkan dari OpenStreetMap.
+
+---
+
+## Tampilan Aplikasi
+
+<table>
+<tr>
+<td width="33%">
+
+**Layar awal**
+
+<img src="docs/screenshots/welcome.png" alt="Layar awal GuideYou&amp;AI" />
+
+</td>
+<td width="33%">
+
+**Pemilihan titik mulai**
+
+<img src="docs/screenshots/02-form-numeric.png" alt="Langkah pemilihan titik mulai" />
+
+</td>
+<td width="33%">
+
+**Pengaturan preferensi**
+
+<img src="docs/screenshots/form-fields.png" alt="Form pengaturan preferensi perjalanan" />
+
+</td>
+</tr>
+</table>
 
 ---
 
@@ -55,13 +79,13 @@
 ┌─────────────────────────────────┐         ┌────────────────────────────────────────┐
 │         React Frontend          │         │         FastAPI Backend (Railway)      │
 │           (Vercel)              │         │                                        │
-│                                 │         │  Startup → pipeline.py load model:    │
-│  WelcomeScreen (pilih lokasi)   │         │    ├── destinations.csv  (1.459 data)  │
+│                                 │         │  Startup → recommender.py load model: │
+│  WelcomeScreen (pilih lokasi)   │         │    ├── destinations.csv (1.459 data)  │
 │  FormScreen    (isi preferensi) │         │    ├── cbf_model.pkl     (1459×1459)   │
 │  LoadingScreen (animasi proses) │  HTTP   │    ├── rl_agent.pkl      (Q-table)     │
 │  ResultsScreen (tampil hasil)   │ ──────► │    └── scaler.pkl                      │
 │                                 │  POST   │                                        │
-│  ◄──── JSON {steps, story} ──── │ /api/plan├── recommender.py                      │
+│  ◄──── JSON {steps, story} ──── │/api/plan ├── recommender.py                      │
 │                                 │         │    ├── Filter (kategori + Haversine)   │
 │  Timeline rute putus-putus      │         │    ├── CBF Scoring (cosine similarity) │
 │  Story card (narasi LLM)        │         │    ├── RL Q-table (greedy selection)   │
@@ -69,80 +93,86 @@
 └─────────────────────────────────┘         │                                        │
                                             │── llm_storyteller.py                   │
                                             │    ├── Groq API (llama-3.1-8b-instant) │
-                                            │    ├── Retry 3x (backoff 1–8 detik)    │
+                                            │    ├── Retry 3x (backoff 1-8 detik)    │
                                             │    └── Fallback template deterministik │
                                             └────────────────────────────────────────┘
 ```
 
-### Alur Request `/api/plan`
+### Alur permintaan `/api/plan`
 
 ```
-User Input
+Input pengguna
     │
     ▼
-[1] Filter kandidat berdasarkan kategori + jarak Haversine dari titik start
+[1] Filter kandidat berdasarkan kategori dan jarak Haversine dari titik mulai
     │
     ▼
-[2] CBF Scoring — cosine similarity dari feature matrix (3 one-hot + 5 numeric + 20 TF-IDF)
+[2] CBF scoring melalui cosine similarity dari feature matrix (one-hot kategori, numerik, TF-IDF tag)
     │
     ▼
-[3] RL Q-table — greedy selection destinasi satu per satu, reward = (rating + variety − budget_penalty)
+[3] Kategori-first reservation, lalu RL Q-table memilih destinasi tambahan secara greedy
     │
     ▼
-[4] TSP Nearest-Neighbor — susun urutan rute paling efisien dari titik awal
+[4] TSP nearest-neighbor menyusun urutan rute dari titik mulai
     │
     ▼
-[5] Hitung jadwal — jam tiba, durasi, jam berangkat per stop
+[5] Perhitungan jadwal: jam tiba, durasi singgah, jam berangkat per pemberhentian
     │
     ▼
-[6] Groq LLM — generate narasi cerita perjalanan (POV orang kedua, 80–120 kata)
+[6] Groq LLM menghasilkan narasi perjalanan (POV orang kedua, 80-120 kata)
     │
     ▼
-JSON Response → Frontend render itinerary
+Respons JSON dirender frontend sebagai itinerary
 ```
 
 ---
 
 ## Fitur Utama
 
-- **Personalized Recommendation** — kombinasi Content-Based Filtering (CBF) dan Reinforcement Learning (Q-Learning) untuk rekomendasi destinasi yang relevan sesuai preferensi user
-- **Route Optimization** — TSP Nearest-Neighbor heuristic untuk menyusun urutan kunjungan yang efisien
-- **Budget & Time Aware** — hard-gate constraints untuk budget tiket dan durasi perjalanan
-- **LLM Storyteller** — narasi cerita perjalanan otomatis dari Groq Llama-3.1, dengan fallback deterministik
-- **1.459 Destinasi** — dataset Bandung Raya dari OpenStreetMap (Alam, Kuliner, Wisata)
-- **Google Maps Integration** — setiap destinasi dilengkapi link Google Maps
+- **Rekomendasi personal.** Kombinasi Content-Based Filtering dan Reinforcement Learning (Q-Learning) memilih destinasi sesuai preferensi kategori, budget, dan rentang waktu.
+- **Reservasi kategori proporsional.** Setiap kategori yang dipilih pengguna dijamin terwakili di itinerary sebelum slot sisanya diisi oleh hasil Q-Learning, sehingga rekomendasi tidak didominasi satu kategori dengan reward tertinggi.
+- **Optimasi rute.** Heuristik TSP nearest-neighbor menyusun urutan kunjungan yang efisien dari titik keberangkatan.
+- **Sadar budget dan waktu.** Hard-gate constraint memastikan total biaya tiket dan durasi perjalanan tetap dalam batas yang ditentukan pengguna.
+- **Narasi otomatis.** Cerita perjalanan dalam Bahasa Indonesia dihasilkan oleh Groq Llama-3.1-8b-instant, dengan fallback deterministik bila API tidak tersedia.
+- **1.459 destinasi.** Dataset Bandung Raya dari OpenStreetMap, terbagi atas kategori Alam, Kuliner, dan Wisata.
+- **Lima preset titik keberangkatan** (Alun-Alun Bandung, Stasiun Bandung, Pasar Lembang, Dago, Gedung Sate) dengan opsi deteksi lokasi GPS.
+- **Tautan Google Maps** untuk setiap destinasi pada hasil itinerary.
 
 ---
 
-## Dataset & Model
+## Dataset dan Model
 
 ### Dataset
 
 | Atribut | Detail |
 |---|---|
 | File | `backend/data/destinations.csv` |
-| Jumlah destinasi | **1.459** |
+| Jumlah destinasi | 1.459 |
 | Distribusi kategori | Alam: 722 · Kuliner: 645 · Wisata: 92 |
-| Rating range | 3.6 — 4.8 |
+| Rentang rating | 3,6 - 4,8 |
+| Rentang tiket | Rp 0 - Rp 249.000 |
+| Durasi kunjungan | 55-270 menit |
 | Kolom | `id`, `name`, `category`, `desc`, `ticket`, `duration`, `lat`, `lng`, `rating`, `tags`, `stay_detail`, `gmaps_url`, `source` |
-| Sumber | OpenStreetMap via Overpass API + enrichment manual kuliner ikonik |
-| Last updated | 2026-05-25 |
+| Sumber | OpenStreetMap melalui Overpass API, dengan enrichment manual untuk sejumlah destinasi kuliner ikonik |
+| Pembaruan terakhir | 2026-05-25 |
 
-Bounding box crawling: `-7.2500, 107.3500, -6.7500, 107.9000` (Bandung Raya)
+Bounding box crawling kawasan Bandung Raya: `-7.2500, 107.3500, -6.7500, 107.9000`.
 
-### Model Artifacts
+### Model artifacts
 
 | File | Deskripsi |
 |---|---|
-| `backend/models/cbf_model.pkl` | Similarity matrix `(1459×1459)` + `df_index`, feature matrix `(1459, 28)` |
-| `backend/models/rl_agent.pkl` | Q-table dict, dilatih 3.000 episode |
+| `backend/models/cbf_model.pkl` | Similarity matrix `(1459×1459)`, feature matrix `(1459, 28)`, dan `df_index` |
+| `backend/models/rl_agent.pkl` | Q-table hasil 3.000 episode training |
 | `backend/models/scaler.pkl` | MinMaxScaler untuk fitur numerik |
-| `backend/models/label_encoders.pkl` | Encoder kategori & TF-IDF tags |
+| `backend/models/label_encoders.pkl` | Encoder kategori dan TF-IDF tags |
 
 **Komposisi feature CBF:**
-- 3 one-hot kategori (bobot ×2.0)
-- 5 fitur numerik scaled: ticket, duration, rating, lat, lng (bobot ×1.0)
-- Hingga 20 TF-IDF dari kolom `tags` + `desc` (bobot ×0.5)
+- One-hot kategori
+- Fitur numerik yang dinormalisasi: ticket, duration, rating, lat, lng
+- TF-IDF dari kolom `tags` dan `desc`
+
+Pipeline lengkap pelatihan model tersedia pada `notebooks/rec-engine.ipynb` (training CBF dan RL) dan `notebooks/llm-train.ipynb` (eksperimen integrasi LLM storyteller).
 
 ---
 
@@ -151,14 +181,14 @@ Bounding box crawling: `-7.2500, 107.3500, -6.7500, 107.9000` (Bandung Raya)
 ```
 Bandung_AI_Travel-Capstone-Project/
 │
-├── backend/                          # FastAPI service → deploy ke Railway
+├── backend/                          # Layanan FastAPI, dideploy ke Railway
 │   ├── main.py                       # Entry point: /, /api/health, /api/plan
 │   ├── recommender.py                # CBF + Q-Learning + TSP scheduler
-│   ├── llm_storyteller.py            # Groq LLM wrapper (retry + fallback)
+│   ├── llm_storyteller.py            # Wrapper Groq LLM (retry + fallback)
 │   ├── data/
 │   │   ├── destinations.csv          # Dataset runtime (1.459 destinasi)
-│   │   └── last_updated.txt          # Tanggal update dataset
-│   ├── models/                       # Pickle artifacts runtime
+│   │   └── last_updated.txt          # Tanggal pembaruan dataset
+│   ├── models/                       # Artefak pickle runtime
 │   │   ├── cbf_model.pkl
 │   │   ├── rl_agent.pkl
 │   │   ├── scaler.pkl
@@ -168,48 +198,50 @@ Bandung_AI_Travel-Capstone-Project/
 │   ├── railway.json                  # Konfigurasi deploy Railway
 │   └── Procfile
 │
-├── frontend/                         # React app → deploy ke Vercel
+├── frontend/                         # Aplikasi React, dideploy ke Vercel
 │   ├── src/
-│   │   ├── App.jsx                   # Root: screen flow welcome→form→loading→results
+│   │   ├── App.jsx                   # Root: alur welcome → form → loading → results
 │   │   ├── components/
-│   │   │   ├── WelcomeScreen.jsx     # Pilih titik keberangkatan
+│   │   │   ├── WelcomeScreen.jsx     # Pemilihan titik keberangkatan
 │   │   │   ├── FormScreen.jsx        # Input preferensi (kategori, budget, jam)
-│   │   │   ├── LoadingScreen.jsx     # Animasi proses + hit API
-│   │   │   └── ResultsScreen.jsx     # Timeline rute + story card + GMaps links
+│   │   │   ├── LoadingScreen.jsx     # Animasi proses saat memanggil API
+│   │   │   └── ResultsScreen.jsx     # Timeline rute, story card, tautan Google Maps
 │   │   ├── api/
-│   │   │   └── client.js             # Axios wrapper ke backend Railway
+│   │   │   └── client.js             # Wrapper fetch ke backend Railway
 │   │   ├── data/
-│   │   │   └── homeOptions.js        # Preset titik keberangkatan + koordinat
+│   │   │   └── homeOptions.js        # Preset titik keberangkatan dan kategori
 │   │   └── utils/
-│   │       └── format.js             # Helper format jam, rupiah, km
+│   │       └── format.js             # Helper format jam, rupiah, kilometer
 │   ├── package.json
-│   └── vercel.json                   # SPA rewrite rule
+│   └── vercel.json                   # Aturan rewrite SPA
 │
 ├── notebooks/
-│   ├── rec-engine.ipynb              # Pipeline training CBF + RL (Kaggle)
+│   ├── rec-engine.ipynb              # Pipeline training CBF dan RL (Kaggle)
 │   └── llm-train.ipynb               # Eksperimen LLM storyteller
 │
 ├── docs/
 │   ├── api/
 │   │   ├── sample_request.json
 │   │   └── sample_response.json
-│   └── screenshots/                  # Screenshot tampilan UI
+│   ├── branding/
+│   │   └── logo.svg                  # Logo GuideYou&AI
+│   └── screenshots/                  # Tangkapan layar tampilan UI
 │
-├── models/                           # Mirror artifacts (untuk referensi)
+├── models/                           # Mirror artefak untuk referensi
 ├── scripts/
-│   └── apply-kaggle-artifacts.sh    # Script update model dari Kaggle export
-└── requirements.txt
+│   └── apply-kaggle-artifacts.sh    # Skrip penerapan model hasil training Kaggle
+└── requirements.txt                  # Dependensi untuk menjalankan ulang notebook training
 ```
 
 ---
 
-## Cara Menjalankan Lokal
+## Menjalankan Secara Lokal
 
 ### Prasyarat
 
-- Python 3.11+
-- Node.js 18+
-- API key Groq (gratis di [console.groq.com](https://console.groq.com))
+- Python 3.11 atau lebih baru
+- Node.js 18 atau lebih baru
+- API key Groq, dapat dibuat gratis di [console.groq.com](https://console.groq.com)
 
 ### 1. Backend
 
@@ -220,32 +252,32 @@ cd backend
 python -m venv venv
 source venv/bin/activate          # Windows: venv\Scripts\activate
 
-# Install dependencies
+# Instal dependensi
 pip install -r requirements.txt
 
 # Konfigurasi environment
 cp .env.example .env
-# Edit .env: isi GROQ_API_KEY
+# Edit .env, isi GROQ_API_KEY
 
 # Jalankan server
 uvicorn main:app --reload --port 8000
 ```
 
-Server berjalan di `http://localhost:8000`. Cek health: `http://localhost:8000/api/health`
+Server berjalan di `http://localhost:8000`. Status kesehatan dapat dicek di `http://localhost:8000/api/health`.
 
 ### 2. Frontend
 
 ```bash
 cd frontend
 
-# Install dependencies
+# Instal dependensi
 npm install
 
 # Jalankan development server
-npm start        # buka http://localhost:3000
+npm start        # terbuka di http://localhost:3000
 ```
 
-Frontend secara default akan hit `http://localhost:8000`. Override via file `.env.local`:
+Secara default frontend memanggil `http://localhost:8000`. URL backend dapat diubah melalui file `.env.local`:
 
 ```
 REACT_APP_API_URL=http://localhost:8000
@@ -253,11 +285,11 @@ REACT_APP_API_URL=http://localhost:8000
 
 ---
 
-## API Reference
+## Referensi API
 
 ### `GET /api/health`
 
-Cek status backend, jumlah destinasi, dan status model.
+Mengembalikan status backend, jumlah destinasi yang dimuat, dan status model.
 
 ```json
 {
@@ -266,42 +298,43 @@ Cek status backend, jumlah destinasi, dan status model.
   "n_destinations": 1459,
   "model_loaded": true,
   "cbf_loaded": true,
-  "sim_matrix_shape": [316, 316],
-  "q_table_size": 1284,
+  "sim_matrix_shape": [1459, 1459],
+  "q_table_size": 146,
   "groq_configured": true
 }
 ```
 
 ### `POST /api/plan`
 
-Generate itinerary + narasi perjalanan.
+Menghasilkan itinerary beserta narasi perjalanan.
 
 **Request body:**
 
 ```json
 {
-  "home": { "lat": -6.9218, "lng": 107.6070 },
+  "home": { "lat": -6.9215, "lng": 107.6071 },
   "homeName": "Alun-Alun Bandung",
   "count": 4,
+  "maxKm": 25,
   "startMin": 540,
   "endMin": 1260,
-  "budget": 300000,
-  "categories": ["Alam", "Kuliner"]
+  "budget": 400000,
+  "categories": ["Alam", "Kuliner", "Wisata"]
 }
 ```
 
 | Parameter | Tipe | Keterangan |
 |---|---|---|
 | `home` | object | Koordinat titik keberangkatan `{lat, lng}` |
-| `homeName` | string | Nama lokasi awal (digunakan untuk narasi) |
-| `count` | int (1–8) | Jumlah destinasi yang diinginkan, default 4 |
-| `startMin` | int | Menit-of-day mulai, misal 540 = 09:00 |
-| `endMin` | int | Menit-of-day selesai, misal 1260 = 21:00 |
-| `budget` | int (opsional) | Total budget tiket (rupiah) |
-| `maxKm` | float (opsional) | Jarak maksimal antar destinasi (km) |
-| `categories` | array (opsional) | Subset dari `["Alam", "Kuliner", "Wisata"]`; kosong = semua |
+| `homeName` | string | Nama lokasi awal, digunakan untuk narasi |
+| `count` | int (1-8) | Jumlah destinasi yang diinginkan, default 4 |
+| `startMin` | int | Menit-of-day mulai, contoh 540 = 09:00 |
+| `endMin` | int | Menit-of-day selesai, contoh 1260 = 21:00, minimal 90 menit setelah `startMin` |
+| `budget` | int, opsional | Total budget tiket dalam rupiah |
+| `maxKm` | float, opsional | Jarak maksimal antar destinasi dalam kilometer |
+| `categories` | array, opsional | Subset dari `["Alam", "Kuliner", "Wisata"]`; kosong berarti semua kategori |
 
-**Response:**
+**Response (ringkas):**
 
 ```json
 {
@@ -309,41 +342,45 @@ Generate itinerary + narasi perjalanan.
     {
       "idx": 1,
       "dest": {
-        "id": "tebing-keraton",
-        "name": "Tebing Keraton",
-        "category": "Alam",
-        "rating": 4.6,
-        "ticket": 15000,
-        "duration": 120,
-        "lat": -6.8425,
-        "lng": 107.6328,
-        "gmaps_url": "https://www.google.com/maps/..."
+        "id": "kebun-binatang-bandung",
+        "name": "Kebun Binatang Bandung",
+        "category": "Wisata",
+        "ticket": 60000,
+        "duration": 150,
+        "rating": 4.1,
+        "gmaps_url": "https://www.google.com/maps/search/?api=1&query=Kebun%20Binatang%20Bandung%2C%20Bandung"
       },
-      "travelMin": 25,
-      "travelKm": 11.8,
-      "arriveAt": 565,
-      "departAt": 685
+      "travelMin": 2,
+      "travelKm": 2.46,
+      "arriveAt": 542,
+      "departAt": 692
     }
   ],
+  "totalCost": 239000,
+  "totalKm": 69.08,
+  "totalTime": 653,
+  "returnKm": 24.43,
+  "returnMin": 64,
+  "arriveHome": 1193,
+  "overBudget": false,
+  "spareMin": 67,
   "story": {
-    "story": "Trip Bandung kamu dimulai dari...",
-    "vibe": "Alam & Kuliner"
+    "story": "Trip Bandung kamu dimulai dari Kebun Binatang Bandung...",
+    "vibe": "Alam · Kuliner · Wisata Umum"
   },
-  "totalCost": 185000,
-  "totalKm": 47.3,
   "data_last_updated": "2026-05-25"
 }
 ```
 
-Sample lengkap: [`docs/api/sample_response.json`](docs/api/sample_response.json)
+`arriveAt` dan `departAt` dinyatakan dalam menit dari tengah malam, dikonversi ke format `HH:MM` melalui `divmod(menit, 60)`. Contoh lengkap tersedia pada [`docs/api/sample_request.json`](docs/api/sample_request.json) dan [`docs/api/sample_response.json`](docs/api/sample_response.json).
 
 ---
 
 ## Deployment
 
-Proyek ini di-deploy menggunakan dua platform gratis:
+Proyek dideploy menggunakan dua platform dengan tingkat layanan gratis.
 
-### Backend → Railway
+### Backend, Railway
 
 | Setting | Nilai |
 |---|---|
@@ -352,16 +389,15 @@ Proyek ini di-deploy menggunakan dua platform gratis:
 | Start Command | `uvicorn main:app --host 0.0.0.0 --port $PORT` |
 | Health Check | `/api/health` |
 
-**Environment Variables yang wajib diset:**
+Environment variable yang wajib diset pada dashboard Railway:
 
 ```
 GROQ_API_KEY     = gsk_xxxxxxxxxxxx
 GROQ_MODEL       = llama-3.1-8b-instant
 ALLOWED_ORIGINS  = https://bandung-travel.vercel.app
-PYTHON_VERSION   = 3.11.9
 ```
 
-### Frontend → Vercel
+### Frontend, Vercel
 
 | Setting | Nilai |
 |---|---|
@@ -369,122 +405,128 @@ PYTHON_VERSION   = 3.11.9
 | Framework | Create React App |
 | Build Command | `npm run build` |
 
-**Environment Variables:**
+Environment variable produksi:
 
 ```
-REACT_APP_API_URL = https://bandungaitravel-capstone-project-production.up.railway.app
+REACT_APP_API_URL = https://bandung-travel-api.up.railway.app
 ```
 
-### Auto-deploy
-
-Setiap `git push` ke branch `main` secara otomatis men-trigger redeploy di Railway (backend) dan Vercel (frontend).
+Setiap `git push` ke branch `main` memicu redeploy otomatis pada Railway dan Vercel.
 
 ---
 
 ## Evaluasi Model
 
-Hasil evaluasi dari 100 skenario simulasi (branch `updateVer`):
+Hasil evaluasi dari skenario simulasi pada notebook training:
 
 | Metrik | Nilai |
 |---|---|
-| Category coverage | **97.0%** |
-| Distance compliance | **100.0%** |
-| Budget compliance | **83.0%** |
-| Average rating | **4.32 / 5.0** |
-| Average total distance | 47.0 km |
-| Average total cost | Rp 185.640 |
-| Average variety index | **0.97** |
-| Average stops per itinerary | 3.31 |
+| Category coverage | 97,0% |
+| Distance compliance | 100,0% |
+| Budget compliance | 83,0% |
+| Rating rata-rata | 4,32 / 5,0 |
+| Jarak total rata-rata | 47,0 km |
+| Biaya total rata-rata | Rp 185.640 |
+| Variety index rata-rata | 0,97 |
+| Jumlah pemberhentian rata-rata | 3,31 |
 
 ---
 
 ## Pembagian Tugas
 
-### Arkhan Falih Fahrie Puspita — Backend Recommendation System
+**Kelompok 6 · Program Studi Sains Data, Telkom University**
 
-Bertanggung jawab atas seluruh pipeline rekomendasi di `backend/recommender.py`:
-- Data collection via Overpass API (OpenStreetMap) dan preprocessing dataset 1.459 destinasi
+| Nama | NIM | Peran |
+|---|---|---|
+| Arkhan Falih Fahrie Puspita | 103052330051 | Backend, Recommendation System (CBF + RL) |
+| Avatar Bintang Ramadhan | 103052300007 | Backend, LLM Storyteller |
+| Azza Zukhrufa | 103052300014 | Frontend, React UI |
+| Azzahra Sabryna Anggara | 103052300018 | Integrasi end-to-end |
+
+### Arkhan Falih Fahrie Puspita, Backend Recommendation System
+
+Bertanggung jawab atas pipeline rekomendasi di `backend/recommender.py`:
+- Pengumpulan data melalui Overpass API (OpenStreetMap) dan preprocessing dataset 1.459 destinasi
 - Feature engineering: one-hot encoding, MinMaxScaler, TF-IDF tags
-- Content-Based Filtering (CBF) menggunakan cosine similarity matrix `(1459×1459)`
-- Multi-Agent Reinforcement Learning (Q-Learning) dengan simulated environment (3.000 episode training)
-- TSP Nearest-Neighbor heuristic untuk optimasi urutan rute
-- Kategori-first reservation system untuk menjamin representasi tiap kategori
-- Training notebook: `notebooks/rec-engine.ipynb`
+- Content-Based Filtering menggunakan cosine similarity matrix `(1459×1459)`
+- Reinforcement Learning (Q-Learning) dengan simulated environment, 3.000 episode training
+- Heuristik TSP nearest-neighbor untuk optimasi urutan rute
+- Sistem reservasi kategori-first untuk menjamin representasi tiap kategori
+- Notebook training: `notebooks/rec-engine.ipynb`
 
-### Avatar Bintang Ramadhan — Backend LLM Storyteller
+### Avatar Bintang Ramadhan, Backend LLM Storyteller
 
 Bertanggung jawab atas integrasi LLM di `backend/llm_storyteller.py`:
 - Integrasi Groq API dengan model `llama-3.1-8b-instant`
-- System prompt engineering untuk narasi POV orang kedua (80–120 kata)
-- Mekanisme retry 3x dengan exponential backoff (1s → 3s → 8s)
-- Fallback template deterministik saat Groq down/rate-limited
-- JSON response format enforcement dan sanitasi POV
+- System prompt untuk narasi POV orang kedua, 80-120 kata
+- Mekanisme retry tiga kali dengan exponential backoff (1s, 3s, 8s)
+- Fallback template deterministik saat Groq tidak tersedia atau rate-limited
+- Penegakan format respons JSON dan sanitasi POV
 - Eksperimen LLM: `notebooks/llm-train.ipynb`
 
-### Azza Zukhrufa — Frontend React
+### Azza Zukhrufa, Frontend React
 
 Bertanggung jawab atas seluruh tampilan di `frontend/src/`:
-- Arsitektur screen flow linear: `WelcomeScreen → FormScreen → LoadingScreen → ResultsScreen`
-- `WelcomeScreen`: deteksi lokasi (GPS/manual) dengan preset titik keberangkatan Bandung
-- `FormScreen`: input preferensi kategori, budget, jam mulai/selesai, jumlah destinasi
-- `LoadingScreen`: animasi proses dengan progress indicator
-- `ResultsScreen`: timeline rute putus-putus, story card narasi, Google Maps hyperlink per destinasi
-- Styling responsif via CSS custom properties
+- Alur screen linear: `WelcomeScreen → FormScreen → LoadingScreen → ResultsScreen`
+- `WelcomeScreen`: deteksi lokasi GPS dengan opsi lima preset titik keberangkatan
+- `FormScreen`: input preferensi kategori, budget, jam mulai dan selesai, jumlah destinasi
+- `LoadingScreen`: animasi proses dengan indikator progres
+- `ResultsScreen`: timeline rute putus-putus, story card narasi, tautan Google Maps per destinasi
+- Styling responsif melalui CSS custom properties
 
-### Azzahra Sabryna Anggara — Integrasi End-to-End
+### Azzahra Sabryna Anggara, Integrasi End-to-End
 
-Bertanggung jawab atas penyambungan semua komponen:
-- Integrasi backend `main.py` (FastAPI) dengan Recommender + LLM Storyteller
-- API client `frontend/src/api/client.js` dan schema alignment frontend–backend
-- Konfigurasi CORS, environment variables, dan deployment Railway + Vercel
-- Testing end-to-end: request flow, error handling, fallback behavior
-- Pembaruan model artifacts dari training Kaggle ke production (`scripts/apply-kaggle-artifacts.sh`)
+Bertanggung jawab atas penyambungan seluruh komponen:
+- Integrasi `main.py` (FastAPI) dengan Recommender dan LLM Storyteller
+- API client `frontend/src/api/client.js` dan penyelarasan schema frontend dan backend
+- Konfigurasi CORS, environment variable, dan deployment Railway serta Vercel
+- Pengujian end-to-end: alur request, penanganan error, perilaku fallback
+- Pembaruan model artifacts dari hasil training Kaggle ke production (`scripts/apply-kaggle-artifacts.sh`)
 
 ---
 
 ## Catatan Teknis
 
-### Kategori-First Reservation
+### Reservasi kategori-first
 
-`recommender.py` melakukan reservasi slot per kategori secara proporsional **sebelum** Q-Learning fill. Ini mencegah DRL terlalu "rakus" pada kategori dengan reward tertinggi sehingga kategori pilihan user tetap terwakili di itinerary.
+`recommender.py` melakukan reservasi slot per kategori secara proporsional sebelum proses Q-Learning mengisi slot sisanya. Mekanisme ini mencegah agen RL terlalu condong pada kategori dengan reward tertinggi, sehingga kategori pilihan pengguna tetap terwakili dalam itinerary.
 
-### CBF Kompatibilitas Dua Format
+### Kompatibilitas dua format CBF
 
 Loader pickle mendukung dua skema output notebook:
 - Format baru: `{"similarity_matrix": ndarray, "df_index": [...]}`
 - Format lama: `{"sim_matrix": ndarray, "id_to_sim_idx": {...}}`
 
-Fallback otomatis tanpa perlu code change saat ganti versi model.
+Fallback berjalan otomatis tanpa perlu perubahan kode saat versi model berganti.
 
-### Update Model ke Production
+### Pembaruan model ke production
 
 ```bash
-# Opsi A — dari branch updateVer (direkomendasikan)
+# Opsi A, dari branch updateVer
 git fetch origin updateVer
 git cat-file -p updateVer:HASIL_TERBARU/working/models/cbf_model.pkl > backend/models/cbf_model.pkl
-# (lihat README lengkap untuk semua langkah)
 
-# Opsi B — dari Kaggle ZIP export
+# Opsi B, dari hasil ekspor Kaggle berupa ZIP
 ./scripts/apply-kaggle-artifacts.sh /path/to/bandung-travel-artifacts.zip
 ```
 
-Setelah commit & push ke `main`: Railway otomatis redeploy, verifikasi via `/api/health`.
+Setelah commit dan push ke `main`, Railway melakukan redeploy otomatis dan dapat diverifikasi melalui `/api/health`.
 
 ---
 
 ## Referensi
 
-- Dataset: [OpenStreetMap](https://www.openstreetmap.org/) via Overpass API
-- LLM: [Groq API](https://console.groq.com) — Llama-3.1-8b-instant
+- Dataset: [OpenStreetMap](https://www.openstreetmap.org/) melalui Overpass API
+- LLM: [Groq API](https://console.groq.com), Llama-3.1-8b-instant
 - Backend framework: [FastAPI](https://fastapi.tiangolo.com/)
 - Frontend hosting: [Vercel](https://vercel.com)
 - Backend hosting: [Railway](https://railway.app)
-- ML: [scikit-learn](https://scikit-learn.org/) — cosine similarity, MinMaxScaler
+- ML: [scikit-learn](https://scikit-learn.org/), cosine similarity dan MinMaxScaler
 
 ---
 
 <div align="center">
 
-**Capstone Project Kelompok 6 · Program Studi Data Science · Telkom University · 2026**
+**Capstone Project Kelompok 6 · Program Studi Sains Data · Telkom University · 2026**
 
 </div>
